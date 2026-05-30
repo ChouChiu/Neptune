@@ -98,9 +98,16 @@ Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created pe
 - `/connect <groupId>` in private chat verifies Telegram admin status before binding
 - `/switch` lets admins with multiple groups switch the active one
 
+## Keyword matching
+
+- Uses `chinese-conv` package (`sify()`) for traditional/simplified Chinese normalization
+- Both keyword and regex patterns match across traditional ↔ simplified automatically
+- Matching logic in `src/handlers/message.ts` `matchKeyword()` function
+
 ## Conventions
 
 - All command/handler registration is in `src/bot.ts` via `registerXxxCommands(bot, db)`
 - Reply helpers in `src/utils/reply.ts` — `replyOptions(ctx)` and `replyOptionsWithParse(ctx)` (Markdown mode)
 - Placeholder replacement: `{nickname}`, `{userid}`, `{groupname}` in `src/utils/placeholders.ts`
 - Captcha images stored as BMP in R2 at key `captcha/{groupId}/{userId}.bmp`
+- Dependencies: `grammy` (bot framework), `chinese-conv` (繁简转换)

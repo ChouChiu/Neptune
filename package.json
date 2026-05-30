@@ -20,6 +20,7 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
+		"chinese-conv": "^4.0.0",
 		"grammy": "^1.43.0"
 	}
 }

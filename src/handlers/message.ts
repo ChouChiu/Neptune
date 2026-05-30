@@ -1,3 +1,4 @@
+import { sify } from "chinese-conv";
 import type { Bot } from "grammy";
 import {
 	getKeywords,
@@ -222,14 +223,25 @@ function matchKeyword(
 	keywords: KeywordRule[],
 	text: string,
 ): KeywordRule | null {
+	const lowerText = text.toLowerCase();
+	const simplifiedText = sify(text).toLowerCase();
+	const hasTraditionalText = simplifiedText !== lowerText;
+
 	for (const rule of keywords) {
 		if (rule.is_regex) {
 			try {
 				const regex = new RegExp(rule.pattern, "i");
 				if (regex.test(text)) return rule;
+				if (hasTraditionalText && regex.test(simplifiedText)) return rule;
+				const simplifiedPattern = sify(rule.pattern);
+				if (simplifiedPattern !== rule.pattern) {
+					const regex2 = new RegExp(simplifiedPattern, "i");
+					if (regex2.test(lowerText) || regex2.test(simplifiedText))
+						return rule;
+				}
 			} catch {}
 		} else {
-			if (text.toLowerCase().includes(rule.pattern.toLowerCase())) {
+			if (simplifiedText.includes(sify(rule.pattern).toLowerCase())) {
 				return rule;
 			}
 		}
