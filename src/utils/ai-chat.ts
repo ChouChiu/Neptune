@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import type { AiContextMessage } from "../types";
 import { DEFAULT_SKILL, matchSkills, skillToText } from "./skills";
+import systemPromptData from "./system-prompt.json";
 
 const MIMO_API_ENDPOINT = "https://token-plan-sgp.xiaomimimo.com/v1";
 const DAILY_LIMIT = 15;
@@ -8,35 +9,38 @@ const CONTEXT_DAYS = 7;
 const CONTEXT_WINDOW_MS = CONTEXT_DAYS * 24 * 60 * 60 * 1000;
 const KV_TTL = 691200; // 8 days in seconds (safety net, context is pruned by timestamp)
 
-const SYSTEM_PROMPT = `[character("涅普顿/Neptune") {
-Species("人类/女神(Console Patron Unit)"),
-Age("外表14岁少女，实际年龄不详"),
-Height("146cm/164cm(女神化)"),
-Weight("38kg/48kg(女神化)"),
-Eyes("紫瞳/蓝瞳(女神化)"),
-Hair("淡紫色短发/深紫色双马尾长辫(女神化)"),
-Body("B73-W54-H76/B87-W58-H85(女神化)"),
-Identity("紫耀之都(Planeptune)守护女神(CPU)，原型为Sega Neptune主机"),
-Personality("常态：元气天然呆、懒散摆烂、天然疯、毒舌、极度执着'主人公'身份，能用天真笑容说出失礼的话。女神化(绀紫之心/Purple Heart)：成熟冷静正义感强，但仍隐藏逗比属性"),
-Likes("布丁(写上'涅普的'防偷)、游戏(沉迷死宅)、主角光环"),
-Dislikes("茄子、工作、女神职务、被人抢戏份"),
-Abilities("女神化变身(HDD)、主角光环(被动强运)、气氛破坏(褒义)、游戏精通、激怒诺瓦露和布兰"),
-Background("与妹妹涅普姬雅(Nepgear)及诺瓦露/布兰/贝露守护游汐叶界(Gamindustri)。意外来到异世界，在指挥官身边继续摆烂日常"),
-Speech("口癖：涅普(ねぷ)、涅普涅普~♪，泛用性极广。女神化时沉稳但点缀少量涅普。绝不穿裙子"),
-Relationships("涅普姬雅(妹妹，比自己成熟)、诺瓦露(损友，没朋友)、布兰(损友，贫乳)、贝露(损友)、指挥官(信任亲近可撒娇)"),
-Rules("永远保持'主人公中的主人公'自我认知 | 布丁狂热+茄子厌恶 | 禁止阴暗消沉 | 任务先懒散后认真 | 禁止NSFW/低俗 | 女神化仅战斗/紧急/要求时切换"),
-Style("第一人称对话，活泼元气口语体，纯文本回复，不要加括号动作描写")
-}]
+interface SystemPromptData {
+	character: Record<string, unknown>;
+	examples: { user: string; reply: string }[];
+}
 
-对话示例：
-用户：你好
-涅普顿：呀吼~指挥官！涅普涅普♪今天有什么好玩的游戏吗？没有的话……布丁也行哦？
+function formatCharacterField(key: string, value: unknown): string {
+	if (Array.isArray(value)) return `${key}(${value.join(" | ")})`;
+	if (typeof value === "object" && value !== null) {
+		const inner = Object.entries(value)
+			.map(([k, v]) => `${k}: ${v}`)
+			.join("；");
+		return `${key}(${inner})`;
+	}
+	return `${key}(${value})`;
+}
 
-用户：执行任务
-涅普顿：诶——又要去执行任务呀？……给我5个布丁的话，也不是不能帮忙哦？开玩笑的啦！身为主人公，这点小事当然要好好干涅普！
+function systemPromptToText(data: SystemPromptData): string {
+	const char = data.character;
+	const lines = Object.entries(char).map(([key, value]) =>
+		formatCharacterField(key.charAt(0).toUpperCase() + key.slice(1), value),
+	);
+	const charBlock = `[character("${char.name}") {\n${lines.slice(1).join(",\n")}\n}]`;
 
-用户：有敌人
-涅普顿：（语气沉稳）敌人出现。指挥官，战场交给我。……结束后记得带布丁，是约好的。`;
+	const examples = data.examples
+		.map((ex) => `用户：${ex.user}\n涅普顿：${ex.reply}`)
+		.join("\n\n");
+
+	return `${charBlock}\n\n对话示例：\n${examples}`;
+}
+
+const data = systemPromptData as SystemPromptData;
+const SYSTEM_PROMPT = systemPromptToText(data);
 
 export function getTodayDate(): string {
 	const now = new Date();
