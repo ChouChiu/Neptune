@@ -7,7 +7,6 @@ const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const CAPTCHA_CACHE_KEY = "captcha/cache/meta.json";
 const MAX_REUSE_COUNT = 10;
-const CAPTCHA_CACHE_TTL = 300;
 
 function randomInt(min: number, max: number): number {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -104,9 +103,8 @@ export async function generateCaptcha(
 			const meta = JSON.parse(await cached.text()) as {
 				text: string;
 				useCount: number;
-				expiresAt: number;
 			};
-			if (meta.useCount < MAX_REUSE_COUNT && meta.expiresAt > Date.now()) {
+			if (meta.useCount < MAX_REUSE_COUNT) {
 				const bmpObj = await bucket.get("captcha/cache/captcha.bmp");
 				if (bmpObj) {
 					meta.useCount++;
@@ -216,7 +214,6 @@ export async function generateCaptcha(
 			JSON.stringify({
 				text,
 				useCount: 1,
-				expiresAt: Date.now() + CAPTCHA_CACHE_TTL * 1000,
 			}),
 		);
 		await bucket.put("captcha/cache/captcha.bmp", bmp, {
