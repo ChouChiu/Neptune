@@ -21,6 +21,11 @@ export function registerWelcomeCommands(bot: Bot, db: D1Database): void {
 			return;
 		}
 
+		if (message.length > 4096) {
+			await ctx.reply("欢迎消息过长（最大 4096 字符）。", replyOptions(ctx));
+			return;
+		}
+
 		await updateWelcomeMessage(db, groupId, message);
 		await ctx.reply("✅ 欢迎消息已更新。", replyOptions(ctx));
 	});

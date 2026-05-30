@@ -34,6 +34,16 @@ export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 		const keyword = args.slice(0, spaceIndex);
 		const reply = args.slice(spaceIndex + 1);
 
+		if (keyword.length > 200) {
+			await ctx.reply("关键词过长（最大 200 字符）。", replyOptions(ctx));
+			return;
+		}
+
+		if (reply.length > 4096) {
+			await ctx.reply("回复内容过长（最大 4096 字符）。", replyOptions(ctx));
+			return;
+		}
+
 		await addKeyword(db, groupId, keyword, false, reply);
 		await ctx.reply(`✅ 已添加关键词规则: ${keyword}`, replyOptions(ctx));
 	});
@@ -64,8 +74,22 @@ export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 		const pattern = args.slice(0, spaceIndex);
 		const reply = args.slice(spaceIndex + 1);
 
+		if (pattern.length > 200) {
+			await ctx.reply("正则表达式过长（最大 200 字符）。", replyOptions(ctx));
+			return;
+		}
+
 		try {
-			new RegExp(pattern);
+			const regex = new RegExp(pattern);
+			const testStart = Date.now();
+			regex.test("a".repeat(1000));
+			if (Date.now() - testStart > 100) {
+				await ctx.reply(
+					"正则表达式过于复杂，可能导致性能问题。",
+					replyOptions(ctx),
+				);
+				return;
+			}
 			await addKeyword(db, groupId, pattern, true, reply);
 			await ctx.reply(`✅ 已添加正则规则: ${pattern}`, replyOptions(ctx));
 		} catch {

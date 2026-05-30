@@ -28,6 +28,11 @@ export default {
 		}
 
 		if (url.pathname === "/set-webhook" && request.method === "GET") {
+			const token = url.searchParams.get("token");
+			if (!env.GITHUB_WEBHOOK_SECRET || token !== env.GITHUB_WEBHOOK_SECRET) {
+				return new Response("Unauthorized", { status: 401 });
+			}
+
 			const bot = createBot(env);
 			const webhookUrl = `${url.origin}/webhook`;
 			const result = await bot.api.setWebhook(webhookUrl, {
@@ -60,16 +65,18 @@ export default {
 		}
 
 		if (url.pathname === "/test" && request.method === "GET") {
+			const authHeader = request.headers.get("Authorization");
+			if (!authHeader || authHeader !== `Bearer ${env.GITHUB_WEBHOOK_SECRET}`) {
+				return new Response("Unauthorized", { status: 401 });
+			}
+
 			try {
 				const bot = createBot(env);
 				const me = await bot.api.getMe();
 
 				let dbStatus = "ok";
-				let groups: unknown[] = [];
 				try {
 					await env.db.prepare("SELECT 1").first();
-					const result = await env.db.prepare("SELECT * FROM groups").all();
-					groups = result.results;
 				} catch (e) {
 					dbStatus = `error: ${e}`;
 				}
@@ -78,12 +85,6 @@ export default {
 					JSON.stringify({
 						bot: me,
 						db: dbStatus,
-						groups,
-						env: {
-							RELEASE_CHANNEL_ID: env.RELEASE_CHANNEL_ID,
-							REUSE_CAPTCHA: env.REUSE_CAPTCHA,
-							hasBotToken: !!env.BOT_TOKEN,
-						},
 					}),
 					{ headers: { "Content-Type": "application/json" } },
 				);

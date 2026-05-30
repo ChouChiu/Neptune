@@ -7,6 +7,7 @@ import {
 } from "../db/queries";
 import { getBotUsername } from "../utils/botInfo";
 import { generateCaptcha, uploadCaptchaToR2 } from "../utils/captcha";
+import { getNickname } from "../utils/nickname";
 import { replacePlaceholders } from "../utils/placeholders";
 import { escapeMarkdown, replyOptions } from "../utils/reply";
 
@@ -47,9 +48,7 @@ export function registerChatMemberHandler(
 			if (newMember.is_bot) continue;
 
 			const userId = newMember.id;
-			const nickname =
-				newMember.first_name +
-				(newMember.last_name ? ` ${newMember.last_name}` : "");
+			const nickname = getNickname(newMember);
 
 			const welcomeText = replacePlaceholders(config.welcome_message, {
 				nickname: escapeMarkdown(nickname),
@@ -195,40 +194,37 @@ export function registerChatMemberHandler(
 		const showTime = Number.parseInt(match[2], 10);
 		const userId = ctx.from.id;
 
+		const config = await getGroupConfig(db, groupId);
+		if (!config?.rule) {
+			await ctx.answerCallbackQuery({ text: "配置错误。" });
+			return;
+		}
+
 		const now = Math.floor(Date.now() / 1000);
 		const elapsed = now - showTime;
 
 		if (elapsed < RULE_ACK_WAIT_SECONDS) {
 			const remaining = RULE_ACK_WAIT_SECONDS - elapsed;
 
-			const config = await getGroupConfig(db, groupId);
-			if (config?.rule) {
-				try {
-					await ctx.editMessageText(buildRuleText(config.rule, remaining), {
-						parse_mode: "Markdown",
-						reply_markup: {
-							inline_keyboard: [
-								[
-									{
-										text: "我以知晓",
-										callback_data: `rule_ack:${groupId}:${showTime}`,
-									},
-								],
+			try {
+				await ctx.editMessageText(buildRuleText(config.rule, remaining), {
+					parse_mode: "Markdown",
+					reply_markup: {
+						inline_keyboard: [
+							[
+								{
+									text: "我以知晓",
+									callback_data: `rule_ack:${groupId}:${showTime}`,
+								},
 							],
-						},
-					});
-				} catch {}
-			}
+						],
+					},
+				});
+			} catch {}
 
 			await ctx.answerCallbackQuery({
 				text: `还需等待 ${remaining} 秒`,
 			});
-			return;
-		}
-
-		const config = await getGroupConfig(db, groupId);
-		if (!config) {
-			await ctx.answerCallbackQuery({ text: "配置错误。" });
 			return;
 		}
 

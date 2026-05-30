@@ -3,34 +3,10 @@ import {
 	addVoteRecord,
 	deleteActiveVote,
 	getActiveVote,
-	getExpiredVotes,
 	getVoteCounts,
 } from "../db/queries";
-
-const VOTE_THRESHOLD = 5;
-
-function buildVoteText(
-	targetName: string,
-	initiatorName: string,
-	yesCount: number,
-	noCount: number,
-	expiresAt: number,
-): string {
-	const yesBar = "🟢".repeat(Math.min(yesCount, 10));
-	const noBar = "🔴".repeat(Math.min(noCount, 10));
-	const deadline = new Date(expiresAt * 1000);
-	const hh = String(deadline.getHours()).padStart(2, "0");
-	const mm = String(deadline.getMinutes()).padStart(2, "0");
-	const ss = String(deadline.getSeconds()).padStart(2, "0");
-	return (
-		`🗳️ 投票踢人\n\n` +
-		`目标: ${targetName}\n` +
-		`发起人: ${initiatorName}\n\n` +
-		`赞成: ${yesBar} ${yesCount}/${VOTE_THRESHOLD}\n` +
-		`反对: ${noBar} ${noCount}\n\n` +
-		`截止时间: ${hh}:${mm}:${ss}`
-	);
-}
+import { getNickname } from "../utils/nickname";
+import { buildVoteText, VOTE_THRESHOLD } from "../utils/vote";
 
 export function registerVotekickHandler(bot: Bot, db: D1Database): void {
 	bot.callbackQuery(/^vk:(.+):([01])$/, async (ctx) => {
@@ -40,16 +16,6 @@ export function registerVotekickHandler(bot: Bot, db: D1Database): void {
 		const voteId = match[1];
 		const choice = Number.parseInt(match[2], 10);
 		const voterId = ctx.from.id;
-
-		const expiredVotes = await getExpiredVotes(db);
-		for (const ev of expiredVotes) {
-			if (ev.message_id) {
-				try {
-					await ctx.api.deleteMessage(ev.group_id, ev.message_id);
-				} catch {}
-			}
-			await deleteActiveVote(db, ev.vote_id);
-		}
 
 		const vote = await getActiveVote(db, voteId);
 		if (!vote) {
@@ -87,18 +53,12 @@ export function registerVotekickHandler(bot: Bot, db: D1Database): void {
 		try {
 			const chatId = vote.group_id;
 			const targetMember = await ctx.api.getChatMember(chatId, vote.target_id);
-			targetName =
-				targetMember.user.first_name +
-				(targetMember.user.last_name ? ` ${targetMember.user.last_name}` : "");
+			targetName = getNickname(targetMember.user);
 			const initiatorMember = await ctx.api.getChatMember(
 				chatId,
 				vote.initiator_id,
 			);
-			initiatorName =
-				initiatorMember.user.first_name +
-				(initiatorMember.user.last_name
-					? ` ${initiatorMember.user.last_name}`
-					: "");
+			initiatorName = getNickname(initiatorMember.user);
 		} catch {}
 
 		const text = buildVoteText(

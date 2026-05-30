@@ -44,6 +44,7 @@ export interface PendingVerification {
 	captcha_text: string;
 	expires_at: number;
 	welcome_message_id: number | null;
+	attempts: number;
 }
 
 export interface ActiveVote {

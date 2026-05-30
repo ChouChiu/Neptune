@@ -2,12 +2,12 @@ import { sify } from "chinese-conv";
 import type { Bot } from "grammy";
 import {
 	getKeywords,
-	getPendingVerification,
 	isAdminConnected,
 	removePendingVerification,
 } from "../db/queries";
 import type { KeywordRule } from "../types";
 import { getChatResponse, shouldTriggerAi } from "../utils/ai-chat";
+import { getNickname } from "../utils/nickname";
 import { replacePlaceholders } from "../utils/placeholders";
 import {
 	escapeMarkdown,
@@ -15,8 +15,13 @@ import {
 	replyOptionsWithParse,
 } from "../utils/reply";
 
+interface CompiledKeywordRule {
+	rule: KeywordRule;
+	regex?: RegExp;
+}
+
 interface KeywordCacheEntry {
-	rules: KeywordRule[];
+	rules: CompiledKeywordRule[];
 	expiresAt: number;
 }
 
@@ -26,12 +31,22 @@ const KEYWORD_CACHE_TTL = 60_000;
 async function getCachedKeywords(
 	db: D1Database,
 	groupId: number,
-): Promise<KeywordRule[]> {
+): Promise<CompiledKeywordRule[]> {
 	const cached = keywordCache.get(groupId);
 	if (cached && cached.expiresAt > Date.now()) {
 		return cached.rules;
 	}
-	const rules = await getKeywords(db, groupId);
+	const rawRules = await getKeywords(db, groupId);
+	const rules: CompiledKeywordRule[] = rawRules.map((rule) => {
+		if (rule.is_regex) {
+			try {
+				return { rule, regex: new RegExp(rule.pattern, "i") };
+			} catch {
+				return { rule };
+			}
+		}
+		return { rule };
+	});
 	keywordCache.set(groupId, {
 		rules,
 		expiresAt: Date.now() + KEYWORD_CACHE_TTL,
@@ -56,23 +71,31 @@ export function registerMessageHandler(
 			// 跳过命令
 			if (text.startsWith("/")) return;
 
-			const groups = await db
+			const verifications = await db
 				.prepare(
-					"SELECT DISTINCT group_id FROM pending_verifications WHERE user_id = ?",
+					"SELECT * FROM pending_verifications WHERE user_id = ? AND expires_at > ?",
 				)
-				.bind(userId)
-				.all<{ group_id: number }>();
+				.bind(userId, Math.floor(Date.now() / 1000))
+				.all<{
+					user_id: number;
+					group_id: number;
+					captcha_text: string;
+					expires_at: number;
+					welcome_message_id: number | null;
+					attempts: number;
+				}>();
 
-			for (const row of groups.results) {
-				const groupId = row.group_id;
-				const verification = await getPendingVerification(db, userId, groupId);
+			const MAX_ATTEMPTS = 5;
 
-				if (!verification) continue;
+			for (const verification of verifications.results) {
+				const groupId = verification.group_id;
 
-				const now = Math.floor(Date.now() / 1000);
-				if (verification.expires_at < now) {
+				if (verification.attempts >= MAX_ATTEMPTS) {
 					await removePendingVerification(db, userId, groupId);
-					await ctx.reply("验证已过期，请重新加入群组。", replyOptions(ctx));
+					await ctx.reply(
+						"验证失败次数过多，请重新加入群组。",
+						replyOptions(ctx),
+					);
 					continue;
 				}
 
@@ -120,7 +143,25 @@ export function registerMessageHandler(
 						);
 					}
 				} else {
-					await ctx.reply("❌ 验证码错误，请重新输入。", replyOptions(ctx));
+					await db
+						.prepare(
+							"UPDATE pending_verifications SET attempts = attempts + 1 WHERE user_id = ? AND group_id = ?",
+						)
+						.bind(userId, groupId)
+						.run();
+					const remaining = MAX_ATTEMPTS - verification.attempts - 1;
+					if (remaining > 0) {
+						await ctx.reply(
+							`❌ 验证码错误，还剩 ${remaining} 次机会。`,
+							replyOptions(ctx),
+						);
+					} else {
+						await removePendingVerification(db, userId, groupId);
+						await ctx.reply(
+							"❌ 验证失败次数过多，请重新加入群组。",
+							replyOptions(ctx),
+						);
+					}
 				}
 				return;
 			}
@@ -204,13 +245,11 @@ export function registerMessageHandler(
 			const matchedRule = matchKeyword(keywords, text);
 			if (!matchedRule) return;
 
-			const nickname =
-				ctx.from.first_name +
-				(ctx.from.last_name ? ` ${ctx.from.last_name}` : "");
+			const nickname = ctx.from ? getNickname(ctx.from) : "unknown";
 
 			const replyContent = replacePlaceholders(matchedRule.reply_content, {
 				nickname: escapeMarkdown(nickname),
-				userid: ctx.from.id,
+				userid: ctx.from?.id,
 				groupname: ctx.chat.title ? escapeMarkdown(ctx.chat.title) : undefined,
 			});
 
@@ -220,17 +259,18 @@ export function registerMessageHandler(
 }
 
 function matchKeyword(
-	keywords: KeywordRule[],
+	keywords: CompiledKeywordRule[],
 	text: string,
 ): KeywordRule | null {
 	const lowerText = text.toLowerCase();
 	const simplifiedText = sify(text).toLowerCase();
 	const hasTraditionalText = simplifiedText !== lowerText;
 
-	for (const rule of keywords) {
+	for (const compiled of keywords) {
+		const rule = compiled.rule;
 		if (rule.is_regex) {
 			try {
-				const regex = new RegExp(rule.pattern, "i");
+				const regex = compiled.regex ?? new RegExp(rule.pattern, "i");
 				if (regex.test(text)) return rule;
 				if (hasTraditionalText && regex.test(simplifiedText)) return rule;
 				const simplifiedPattern = sify(rule.pattern);

@@ -31,7 +31,6 @@ export async function updateWelcomeMessage(
 	groupId: number,
 	message: string,
 ): Promise<void> {
-	await initGroup(db, groupId);
 	await db
 		.prepare("UPDATE groups SET welcome_message = ? WHERE group_id = ?")
 		.bind(message, groupId)
@@ -43,7 +42,6 @@ export async function setWelcomeEnabled(
 	groupId: number,
 	enabled: boolean,
 ): Promise<void> {
-	await initGroup(db, groupId);
 	await db
 		.prepare("UPDATE groups SET welcome_enabled = ? WHERE group_id = ?")
 		.bind(enabled ? 1 : 0, groupId)
@@ -55,7 +53,6 @@ export async function updateVerifyButtonText(
 	groupId: number,
 	text: string,
 ): Promise<void> {
-	await initGroup(db, groupId);
 	await db
 		.prepare("UPDATE groups SET verify_button_text = ? WHERE group_id = ?")
 		.bind(text, groupId)
@@ -67,7 +64,6 @@ export async function updateVerifyTimeout(
 	groupId: number,
 	timeout: number,
 ): Promise<void> {
-	await initGroup(db, groupId);
 	await db
 		.prepare("UPDATE groups SET verify_timeout = ? WHERE group_id = ?")
 		.bind(timeout, groupId)
@@ -79,7 +75,6 @@ export async function updateGroupRule(
 	groupId: number,
 	rule: string,
 ): Promise<void> {
-	await initGroup(db, groupId);
 	await db
 		.prepare("UPDATE groups SET rule = ? WHERE group_id = ?")
 		.bind(rule, groupId)
@@ -260,7 +255,6 @@ export async function setVotekickEnabled(
 	groupId: number,
 	enabled: boolean,
 ): Promise<void> {
-	await initGroup(db, groupId);
 	await db
 		.prepare("UPDATE groups SET votekick_enabled = ? WHERE group_id = ?")
 		.bind(enabled ? 1 : 0, groupId)
@@ -363,8 +357,12 @@ export async function addVoteRecord(
 			.bind(voteId, voterId, choice)
 			.run();
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		const msg = error instanceof Error ? error.message : String(error);
+		if (msg.includes("UNIQUE") || msg.includes("unique")) {
+			return false;
+		}
+		throw error;
 	}
 }
 

@@ -7,38 +7,16 @@ import {
 	setVotekickEnabled,
 	updateVoteMessageId,
 } from "../db/queries";
+import { getNickname } from "../utils/nickname";
 import { checkAdminPermission } from "../utils/permissions";
 import { replyOptions } from "../utils/reply";
+import { buildVoteText } from "../utils/vote";
 
 const VOTE_DURATION = 300;
-const VOTE_THRESHOLD = 5;
 const INITIATOR_COOLDOWN = 60;
 
 function generateVoteId(): string {
-	return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function buildVoteText(
-	targetName: string,
-	initiatorName: string,
-	yesCount: number,
-	noCount: number,
-	expiresAt: number,
-): string {
-	const yesBar = "🟢".repeat(Math.min(yesCount, 10));
-	const noBar = "🔴".repeat(Math.min(noCount, 10));
-	const deadline = new Date(expiresAt * 1000);
-	const hh = String(deadline.getHours()).padStart(2, "0");
-	const mm = String(deadline.getMinutes()).padStart(2, "0");
-	const ss = String(deadline.getSeconds()).padStart(2, "0");
-	return (
-		`🗳️ 投票踢人\n\n` +
-		`目标: ${targetName}\n` +
-		`发起人: ${initiatorName}\n\n` +
-		`赞成: ${yesBar} ${yesCount}/${VOTE_THRESHOLD}\n` +
-		`反对: ${noBar} ${noCount}\n\n` +
-		`截止时间: ${hh}:${mm}:${ss}`
-	);
+	return crypto.randomUUID();
 }
 
 export function registerVotekickCommands(bot: Bot, db: D1Database): void {
@@ -105,9 +83,7 @@ export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 		}
 
 		const targetId = replyMsg.from.id;
-		const targetName =
-			replyMsg.from.first_name +
-			(replyMsg.from.last_name ? ` ${replyMsg.from.last_name}` : "");
+		const targetName = getNickname(replyMsg.from);
 
 		if (targetId === from.id) {
 			await ctx.reply("❌ 不能对自己发起投票。", replyOptions(ctx));
@@ -159,8 +135,7 @@ export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 			expiresAt,
 		);
 
-		const initiatorName =
-			from.first_name + (from.last_name ? ` ${from.last_name}` : "");
+		const initiatorName = getNickname(from);
 		const text = buildVoteText(targetName, initiatorName, 0, 0, expiresAt);
 
 		const sent = await ctx.reply(text, {

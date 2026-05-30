@@ -7,6 +7,7 @@ import {
 	setCurrentGroup,
 } from "../db/queries";
 import { getBotUsername } from "../utils/botInfo";
+import { getNickname } from "../utils/nickname";
 import { checkAdminPermission } from "../utils/permissions";
 import { replyOptions, replyOptionsWithParse } from "../utils/reply";
 
@@ -132,9 +133,7 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 		if (!ctx.from) return;
 
 		const userId = ctx.from.id;
-		const nickname =
-			ctx.from.first_name +
-			(ctx.from.last_name ? ` ${ctx.from.last_name}` : "");
+		const nickname = getNickname(ctx.from);
 
 		const botUsername = await getBotUsername(ctx.api);
 		const verifyUrl = `https://t.me/${botUsername}?start=verify${groupId}_${userId}`;

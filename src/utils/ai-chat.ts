@@ -8,6 +8,9 @@ const DAILY_LIMIT = 15;
 const CONTEXT_DAYS = 7;
 const CONTEXT_WINDOW_MS = CONTEXT_DAYS * 24 * 60 * 60 * 1000;
 const KV_TTL = 691200; // 8 days in seconds (safety net, context is pruned by timestamp)
+const MAX_CONTEXT_MESSAGES = 50;
+const API_TIMEOUT_MS = 25_000;
+const MAX_RETRIES = 2;
 
 interface SystemPromptData {
 	character: Record<string, unknown>;
@@ -79,13 +82,20 @@ export function shouldTriggerAi(ctx: Context, botId: number): boolean {
 
 	if (message.reply_to_message?.from?.id === botId) {
 		const repliedText = message.reply_to_message.text || "";
-		if (
-			repliedText.includes("验证") ||
-			repliedText.includes("欢迎") ||
-			repliedText.includes("命令") ||
-			repliedText.includes("踢人") ||
-			repliedText.includes("投票")
-		) {
+		const caption =
+			(message.reply_to_message as { caption?: string }).caption || "";
+		const combined = repliedText + caption;
+		const systemKeywords = [
+			"验证",
+			"欢迎",
+			"命令",
+			"踢人",
+			"投票",
+			"群规",
+			"关键词",
+			"Pong",
+		];
+		if (systemKeywords.some((kw) => combined.includes(kw))) {
 			return false;
 		}
 		return true;
@@ -111,7 +121,9 @@ export async function updateAiContext(
 ): Promise<void> {
 	const key = `ai:context:${groupId}`;
 	const cutoff = Date.now() - CONTEXT_WINDOW_MS;
-	const trimmed = messages.filter((msg) => (msg.timestamp ?? 0) >= cutoff);
+	const trimmed = messages
+		.filter((msg) => (msg.timestamp ?? 0) >= cutoff)
+		.slice(-MAX_CONTEXT_MESSAGES);
 	await kv.put(key, JSON.stringify(trimmed), { expirationTtl: KV_TTL });
 }
 
@@ -152,31 +164,76 @@ export async function callMimoApi(
 	messages: { role: string; content: string }[],
 	systemPrompt: string = SYSTEM_PROMPT,
 ): Promise<string> {
-	const response = await fetch(`${MIMO_API_ENDPOINT}/chat/completions`, {
-		method: "POST",
-		headers: {
-			"api-key": apiKey,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			model: "mimo-v2.5",
-			messages: [{ role: "system", content: systemPrompt }, ...messages],
-			stream: false,
-			temperature: 1.0,
-			top_p: 0.95,
-			max_completion_tokens: 2048,
-		}),
+	const body = JSON.stringify({
+		model: "mimo-v2.5",
+		messages: [{ role: "system", content: systemPrompt }, ...messages],
+		stream: false,
+		temperature: 1.0,
+		top_p: 0.95,
+		max_completion_tokens: 2048,
 	});
 
-	if (!response.ok) {
-		const errorText = await response.text();
-		throw new Error(`MiMo API error: ${response.status} - ${errorText}`);
+	let lastError: Error | null = null;
+
+	for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+		if (attempt > 0) {
+			await new Promise((r) => setTimeout(r, 1000 * attempt));
+		}
+
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+		try {
+			const response = await fetch(`${MIMO_API_ENDPOINT}/chat/completions`, {
+				method: "POST",
+				headers: {
+					"api-key": apiKey,
+					"Content-Type": "application/json",
+				},
+				body,
+				signal: controller.signal,
+			});
+
+			clearTimeout(timeout);
+
+			if (response.ok) {
+				const data = (await response.json()) as {
+					choices: { message: { content: string } }[];
+				};
+				return data.choices[0]?.message?.content ?? "";
+			}
+
+			const errorText = await response.text();
+			lastError = new Error(
+				`MiMo API error: ${response.status} - ${errorText}`,
+			);
+
+			if (response.status === 429 || response.status >= 500) {
+				console.error(
+					`MiMo API retryable error (attempt ${attempt + 1}):`,
+					lastError.message,
+				);
+				continue;
+			}
+
+			throw lastError;
+		} catch (error) {
+			clearTimeout(timeout);
+			if (error instanceof DOMException && error.name === "AbortError") {
+				lastError = new Error(`MiMo API timeout after ${API_TIMEOUT_MS}ms`);
+				console.error(`MiMo API timeout (attempt ${attempt + 1})`);
+				continue;
+			}
+			if (attempt === MAX_RETRIES) throw error;
+			lastError = error instanceof Error ? error : new Error(String(error));
+			console.error(
+				`MiMo API error (attempt ${attempt + 1}):`,
+				lastError.message,
+			);
+		}
 	}
 
-	const data = (await response.json()) as {
-		choices: { message: { content: string } }[];
-	};
-	return data.choices[0]?.message?.content ?? "";
+	throw lastError ?? new Error("MiMo API failed after retries");
 }
 
 export async function getChatResponse(
@@ -205,7 +262,12 @@ export async function getChatResponse(
 		timestamp: Date.now(),
 	});
 
-	const apiMessages = context.map((msg) => ({
+	const trimmedContext =
+		context.length > MAX_CONTEXT_MESSAGES
+			? context.slice(-MAX_CONTEXT_MESSAGES)
+			: context;
+
+	const apiMessages = trimmedContext.map((msg) => ({
 		role: msg.role,
 		content: msg.content,
 	}));

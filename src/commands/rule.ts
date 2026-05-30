@@ -35,6 +35,11 @@ export function registerRuleCommands(bot: Bot, db: D1Database): void {
 			return;
 		}
 
+		if (rule.length > 2048) {
+			await ctx.reply("群规过长（最大 2048 字符）。", replyOptions(ctx));
+			return;
+		}
+
 		await updateGroupRule(db, groupId, rule);
 		await ctx.reply(
 			"✅ 群规已设置。入群认证时将强制阅读群规。",

@@ -1,7 +1,7 @@
 import type { Context } from "grammy";
 
 export function escapeMarkdown(text: string): string {
-	return text.replace(/[_*`[]/g, "\\$&");
+	return text.replace(/[_[\]()~`>#+\-=|{}.!\\]/g, "\\$&");
 }
 
 export function replyOptions(ctx: Context) {

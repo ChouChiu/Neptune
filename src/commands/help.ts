@@ -21,6 +21,7 @@ const HELP_TEXT = `📋 *命令列表*
 /setverifybutton <文案> - 设置认证按钮文案
 /setverifytimeout <秒> - 设置认证超时时间
 /testverify - 测试验证消息
+/rule <内容> - 设置群规（入群需阅读）
 
 🔹 *自动回复*
 /addkeyword <关键词> <回复> - 添加关键词规则

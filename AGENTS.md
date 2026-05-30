@@ -25,6 +25,8 @@ No test suite exists. Verify changes with `lint` + `typecheck` only.
 - Wrangler doesn't support Bun runtime directly; use `bunx wrangler` (macOS 13.5+) or `--remote` flag.
 - Deploy requires running `/set-webhook` on the worker URL to register the Telegram webhook.
 - `/set-webhook` also calls `setMyCommands` to sync the BotFather command list. New commands must be added there in `src/index.ts`.
+- `/set-webhook` requires `?token=<GITHUB_WEBHOOK_SECRET>` query param for auth.
+- `/test` endpoint requires `Authorization: Bearer <GITHUB_WEBHOOK_SECRET>` header.
 
 ## Bindings vs Env interface
 
@@ -52,6 +54,7 @@ Optional env vars:
 - Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`
 - Migrations in `migrations/` — apply with `wrangler d1 execute <name> --remote --file=migrations/<file>.sql`
 - Migrations must be applied manually; there is no auto-migration on deploy.
+- Pending migrations: `005_captcha_attempts.sql` (adds `attempts` column to `pending_verifications`), `006_indexes.sql` (adds indexes on `expires_at` columns)
 
 ## Architecture
 
@@ -60,10 +63,10 @@ src/
 ├── index.ts           # Workers fetch handler: /webhook, /set-webhook, /test, /github-webhook
 ├── bot.ts             # createBot(env) — registers all commands/handlers
 ├── types.ts           # Env interface + data models
-├── commands/          # help, admin, welcome, verify, keywords, votekick, ping
+├── commands/          # help, admin, welcome, verify, rule, keywords, votekick, ping
 ├── handlers/          # chatMember (join+verify flow), message (keyword match + AI chat + captcha reply), votekick (callback query)
 ├── db/                # schema.sql + queries.ts
-└── utils/             # ai-chat, captcha, github-release (webhook + GFM→MarkdownV2), placeholders, permissions, reply helpers
+└── utils/             # ai-chat, captcha, github-release, nickname, vote, placeholders, permissions, reply helpers
 ```
 
 Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created per-request via `createBot(env)`.
@@ -72,10 +75,12 @@ Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created pe
 
 - Triggered by @mention of the bot or replying to the bot's messages in groups.
 - Uses Xiaomi MiMo V2.5 API (`https://token-plan-sgp.xiaomimimo.com/v1`).
-- Context stored in KV (`aiContext`) as `ai:context:{groupId}`, rolling 7-day window (pruned by timestamp, not count). KV TTL is 8 days as safety net.
+- Context stored in KV (`aiContext`) as `ai:context:{groupId}`, limited to 50 messages (pruned by timestamp and count). KV TTL is 8 days as safety net.
 - Daily usage tracked in D1 `ai_chat_usage` table (15/day per user, admins exempt).
-- System prompt (Neptune persona) is in `src/utils/ai-chat.ts` — it is very long; don't truncate.
+- System prompt (Neptune persona) is in `src/utils/system-prompt.json`, rendered by `systemPromptToText()`.
+- API call has 25s timeout via AbortController, retries up to 2 times on 429/5xx errors.
 - Admin check: Telegram `creator`/`administrator` status OR `admin_connections` table.
+- `shouldTriggerAi()` in `src/utils/ai-chat.ts` filters out replies to system messages using a keyword list — update this list if new bot message types are added.
 
 ## GitHub Release webhook
 
@@ -103,11 +108,18 @@ Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created pe
 - Uses `chinese-conv` package (`sify()`) for traditional/simplified Chinese normalization
 - Both keyword and regex patterns match across traditional ↔ simplified automatically
 - Matching logic in `src/handlers/message.ts` `matchKeyword()` function
+- Regex patterns are compiled once and cached in `keywordCache` (60s TTL) as `RegExp` objects
+- `/addregex` validates regex length (≤200 chars) and runs a complexity test (100ms threshold) to prevent ReDoS
 
 ## Conventions
 
 - All command/handler registration is in `src/bot.ts` via `registerXxxCommands(bot, db)`
 - Reply helpers in `src/utils/reply.ts` — `replyOptions(ctx)` and `replyOptionsWithParse(ctx)` (Markdown mode)
+- `escapeMarkdown()` escapes all Telegram MarkdownV2 special chars: `_[\]()~`>#+\-=|{}.!\\`
 - Placeholder replacement: `{nickname}`, `{userid}`, `{groupname}` in `src/utils/placeholders.ts`
+- `getNickname(user)` in `src/utils/nickname.ts` — use this instead of inline `first_name + last_name` concatenation
+- `buildVoteText()` and `VOTE_THRESHOLD` in `src/utils/vote.ts` — shared by votekick command and handler
 - Captcha images stored as BMP in R2 at key `captcha/{groupId}/{userId}.bmp`
+- Captcha brute-force: `pending_verifications.attempts` column, 5 attempts max before lockout
+- `/rule` command sets group rules shown during verification flow (10s reading time enforced via `rule_ack` callback)
 - Dependencies: `grammy` (bot framework), `chinese-conv` (繁简转换)
