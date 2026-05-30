@@ -206,6 +206,16 @@ export function registerChatMemberHandler(
 				try {
 					await ctx.editMessageText(buildRuleText(config.rule, remaining), {
 						parse_mode: "Markdown",
+						reply_markup: {
+							inline_keyboard: [
+								[
+									{
+										text: "我以知晓",
+										callback_data: `rule_ack:${groupId}:${showTime}`,
+									},
+								],
+							],
+						},
 					});
 				} catch {}
 			}
