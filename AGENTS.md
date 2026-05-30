@@ -83,7 +83,8 @@ Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created pe
 - Receives GitHub `release` events, verifies `X-Hub-Signature-256` (HMAC-SHA256), sends formatted release note to Telegram channel
 - Only processes `action: "published"` (ignores `created`, `edited`, `prereleased`, `draft`)
 - Handles `ping` event (returns "pong") and non-release events (returns "ignored")
-- GFM → MarkdownV2 conversion in `src/utils/github-release.ts`: code blocks protected, links preserved, headings→bold, list markers (`- * +`)→`⦁`, GitHub callouts (`[!NOTE]` etc.) stripped, blockquotes→Telegram `>text`
+- GFM → MarkdownV2 conversion in `src/utils/github-release.ts`: code blocks protected, links preserved, headings→bold, list markers (`- * +`)→`⦁`, GitHub callouts (`[!NOTE]` etc., case-insensitive) stripped, blockquotes→Telegram `>text`
+- `!` is reserved in Telegram MarkdownV2 — callout markers like `[!Note]` must be stripped before escaping, otherwise send fails with 400
 - Message truncated at 4096 chars; link always preserved at end
 - `sendToTelegram` retries up to 3 times with 1s delay; logs all attempts via `console.log`/`console.error`
 - GitHub webhook payload uses `\r\n` line endings — normalized to `\n` before regex processing

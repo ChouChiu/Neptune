@@ -73,9 +73,19 @@ export default {
 					dbStatus = `error: ${e}`;
 				}
 
-				return new Response(JSON.stringify({ bot: me, db: dbStatus, groups }), {
-					headers: { "Content-Type": "application/json" },
-				});
+				return new Response(
+					JSON.stringify({
+						bot: me,
+						db: dbStatus,
+						groups,
+						env: {
+							RELEASE_CHANNEL_ID: env.RELEASE_CHANNEL_ID,
+							REUSE_CAPTCHA: env.REUSE_CAPTCHA,
+							hasBotToken: !!env.BOT_TOKEN,
+						},
+					}),
+					{ headers: { "Content-Type": "application/json" } },
+				);
 			} catch (error) {
 				return new Response(`Error: ${error}`, { status: 500 });
 			}

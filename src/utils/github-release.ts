@@ -71,7 +71,7 @@ export function convertGfmToMarkdownV2(gfm: string): string {
 	text = text
 		.split("\n")
 		.map((line) =>
-			line.replace(/^>?\s*\[!(?:NOTE|WARNING|TIP|IMPORTANT|CAUTION)\]\s*/, ""),
+			line.replace(/^>?\s*\[!(?:NOTE|WARNING|TIP|IMPORTANT|CAUTION)\]\s*/i, ""),
 		)
 		.join("\n");
 
@@ -133,7 +133,10 @@ export function convertGfmToMarkdownV2(gfm: string): string {
 
 export function formatReleaseMessage(release: GitHubRelease): string {
 	const tagName = escapeMd(release.release.tag_name);
-	const header = `🎉 Kazumi ${tagName} 已发布`;
+	const isOhos = release.release.name?.toLowerCase().includes("ohos") ?? false;
+	const header = isOhos
+		? `🎉 Kazumi ${tagName} for OHOS 已发布`
+		: `🎉 Kazumi ${tagName} 已发布`;
 
 	const body = release.release.body?.trim();
 	const bodyMd = body ? convertGfmToMarkdownV2(body) : "";
