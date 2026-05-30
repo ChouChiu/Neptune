@@ -16,6 +16,7 @@ export interface GroupConfig {
 	verify_button_text: string;
 	verify_timeout: number;
 	votekick_enabled: number;
+	rule: string;
 }
 
 export interface KeywordRule {

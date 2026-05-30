@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS groups (
   welcome_message TEXT DEFAULT '欢迎 {nickname} 加入群组！',
   verify_button_text TEXT DEFAULT '开始认证',
   verify_timeout INTEGER DEFAULT 300,
-  votekick_enabled INTEGER DEFAULT 0
+  votekick_enabled INTEGER DEFAULT 0,
+  rule TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS keywords (

@@ -74,6 +74,18 @@ export async function updateVerifyTimeout(
 		.run();
 }
 
+export async function updateGroupRule(
+	db: D1Database,
+	groupId: number,
+	rule: string,
+): Promise<void> {
+	await initGroup(db, groupId);
+	await db
+		.prepare("UPDATE groups SET rule = ? WHERE group_id = ?")
+		.bind(rule, groupId)
+		.run();
+}
+
 export async function getAdminGroupId(
 	db: D1Database,
 	userId: number,

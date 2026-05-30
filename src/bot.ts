@@ -3,6 +3,7 @@ import { registerAdminCommands } from "./commands/admin";
 import { registerHelpCommand } from "./commands/help";
 import { registerKeywordCommands } from "./commands/keywords";
 import { registerPingCommand } from "./commands/ping";
+import { registerRuleCommands } from "./commands/rule";
 import { registerVerifyCommands } from "./commands/verify";
 import { registerVotekickCommands } from "./commands/votekick";
 import { registerWelcomeCommands } from "./commands/welcome";
@@ -19,6 +20,7 @@ export function createBot(env: Env): Bot {
 	registerAdminCommands(bot, env.db);
 	registerWelcomeCommands(bot, env.db);
 	registerVerifyCommands(bot, env.db);
+	registerRuleCommands(bot, env.db);
 	registerKeywordCommands(bot, env.db);
 	registerVotekickCommands(bot, env.db);
 	registerChatMemberHandler(

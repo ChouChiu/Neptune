@@ -45,6 +45,7 @@ export default {
 				{ command: "setverifybutton", description: "设置认证按钮文案" },
 				{ command: "setverifytimeout", description: "设置认证超时时间" },
 				{ command: "testverify", description: "测试验证消息" },
+				{ command: "rule", description: "设置群规（入群需阅读）" },
 				{ command: "addkeyword", description: "添加关键词规则" },
 				{ command: "addregex", description: "添加正则规则" },
 				{ command: "listkeywords", description: "列出所有规则" },
