@@ -10,6 +10,7 @@ Telegram 群管理 Bot，基于 Cloudflare Workers 构建。
 - AI 聊天 - 搭载涅普顿人格的 AI 对话，支持上下文记忆
 - 投票踢人 - 群成员投票踢人，支持启用/禁用，过期自动清理
 - 管理员私聊管理 - 通过私聊管理群组设置，支持多群组切换
+- GitHub Release 通知 - 自动接收 Kazumi 仓库新 Release 并发送到 Telegram 频道
 - 权限控制 - 所有管理命令仅限管理员使用
 
 ## 技术栈
@@ -72,6 +73,7 @@ Telegram 群管理 Bot，基于 Cloudflare Workers 构建。
    ```bash
    echo "YOUR_BOT_TOKEN" | wrangler secret put BOT_TOKEN
    echo "YOUR_MIMO_API_KEY" | wrangler secret put MIMO_API_KEY
+   echo "YOUR_GITHUB_WEBHOOK_SECRET" | wrangler secret put GITHUB_WEBHOOK_SECRET
    ```
 
 8. 部署
@@ -79,8 +81,16 @@ Telegram 群管理 Bot，基于 Cloudflare Workers 构建。
    bun run deploy
    ```
 
-9. 设置 Webhook
+9. 设置 Telegram Webhook
    访问 `https://<your-worker-url>/set-webhook`
+
+10. 配置 GitHub Webhook（可选，用于 Release 通知）
+    - 在 `wrangler.toml` 中设置 `RELEASE_CHANNEL_ID`（Telegram 频道 ID）
+    - 在 GitHub 仓库 Settings → Webhooks 添加：
+      - URL: `https://<your-worker-url>/github-webhook`
+      - Content type: `application/json`
+      - Secret: 与步骤 7 中 `GITHUB_WEBHOOK_SECRET` 相同
+      - Events: 仅勾选 **Release**
 
 ## 命令列表
 

@@ -4,6 +4,7 @@ compatibility_date = "2026-05-30"
 
 [vars]
 REUSE_CAPTCHA = "true"
+RELEASE_CHANNEL_ID = "<YOUR_CHANNEL_ID>"
 
 [[d1_databases]]
 binding = "db"
@@ -19,3 +20,4 @@ binding = "aiContext"
 id = "<YOUR_KV_NAMESPACE_ID>"
 
 # MIMO_API_KEY is set as a secret (wrangler secret put MIMO_API_KEY)
+# GITHUB_WEBHOOK_SECRET is set as a secret (wrangler secret put GITHUB_WEBHOOK_SECRET)

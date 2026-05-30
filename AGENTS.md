@@ -21,6 +21,7 @@ No test suite exists. Verify changes with `lint` + `typecheck` only.
 - Linter/formatter is **Biome** (not ESLint/Prettier). Uses **tabs** and **double quotes**.
 - `wrangler.toml` is **gitignored** — `wrangler.example.toml` is the template. D1 database_id, R2 bucket_name, and KV id must be filled in.
 - `BOT_TOKEN` and `MIMO_API_KEY` are Wrangler secrets (`wrangler secret put`), not in `wrangler.toml`.
+- `GITHUB_WEBHOOK_SECRET` is also a Wrangler secret (used for GitHub webhook signature verification).
 - Wrangler doesn't support Bun runtime directly; use `bunx wrangler` (macOS 13.5+) or `--remote` flag.
 - Deploy requires running `/set-webhook` on the worker URL to register the Telegram webhook.
 - `/set-webhook` also calls `setMyCommands` to sync the BotFather command list. New commands must be added there in `src/index.ts`.
@@ -38,8 +39,11 @@ No test suite exists. Verify changes with `lint` + `typecheck` only.
 Secrets (not in wrangler.toml):
 - `BOT_TOKEN` — Telegram bot token
 - `MIMO_API_KEY` — Xiaomi MiMo API key for AI chat
+- `GITHUB_WEBHOOK_SECRET` — GitHub webhook HMAC-SHA256 signing secret
 
-Optional env var: `REUSE_CAPTCHA` (`"true"` to enable captcha reuse up to 10 times).
+Optional env vars:
+- `REUSE_CAPTCHA` — `"true"` to enable captcha reuse up to 10 times
+- `RELEASE_CHANNEL_ID` — Telegram channel ID for GitHub release notifications
 
 ## Database
 
@@ -53,13 +57,13 @@ Optional env var: `REUSE_CAPTCHA` (`"true"` to enable captcha reuse up to 10 tim
 
 ```
 src/
-├── index.ts           # Workers fetch handler: /webhook, /set-webhook, /test
+├── index.ts           # Workers fetch handler: /webhook, /set-webhook, /test, /github-webhook
 ├── bot.ts             # createBot(env) — registers all commands/handlers
 ├── types.ts           # Env interface + data models
 ├── commands/          # help, admin, welcome, verify, keywords, votekick, ping
 ├── handlers/          # chatMember (join+verify flow), message (keyword match + AI chat + captcha reply), votekick (callback query)
 ├── db/                # schema.sql + queries.ts
-└── utils/             # ai-chat (MiMo API + context in KV), captcha (BMP+R2), placeholders, permissions, reply helpers
+└── utils/             # ai-chat, captcha, github-release (webhook + GFM→MarkdownV2), placeholders, permissions, reply helpers
 ```
 
 Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created per-request via `createBot(env)`.
@@ -72,6 +76,17 @@ Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created pe
 - Daily usage tracked in D1 `ai_chat_usage` table (15/day per user, admins exempt).
 - System prompt (Neptune persona) is in `src/utils/ai-chat.ts` — it is very long; don't truncate.
 - Admin check: Telegram `creator`/`administrator` status OR `admin_connections` table.
+
+## GitHub Release webhook
+
+- Endpoint: `POST /github-webhook` in `src/index.ts`
+- Receives GitHub `release` events, verifies `X-Hub-Signature-256` (HMAC-SHA256), sends formatted release note to Telegram channel
+- Only processes `action: "published"` (ignores `created`, `edited`, `prereleased`, `draft`)
+- Handles `ping` event (returns "pong") and non-release events (returns "ignored")
+- GFM → MarkdownV2 conversion in `src/utils/github-release.ts`: code blocks protected, links preserved, headings→bold, list markers (`- * +`)→`⦁`, GitHub callouts (`[!NOTE]` etc.) stripped, blockquotes→Telegram `>text`
+- Message truncated at 4096 chars; link always preserved at end
+- `sendToTelegram` retries up to 3 times with 1s delay; logs all attempts via `console.log`/`console.error`
+- GitHub webhook payload uses `\r\n` line endings — normalized to `\n` before regex processing
 
 ## Permission model
 

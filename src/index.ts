@@ -1,6 +1,11 @@
 import { webhookCallback } from "grammy";
 import { createBot } from "./bot";
 import type { Env } from "./types";
+import {
+	formatReleaseMessage,
+	sendToTelegram,
+	verifySignature,
+} from "./utils/github-release";
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -73,6 +78,49 @@ export default {
 				});
 			} catch (error) {
 				return new Response(`Error: ${error}`, { status: 500 });
+			}
+		}
+
+		if (url.pathname === "/github-webhook" && request.method === "POST") {
+			try {
+				const ghEvent = request.headers.get("X-GitHub-Event");
+
+				if (ghEvent === "ping") {
+					return new Response("pong", { status: 200 });
+				}
+
+				if (ghEvent !== "release") {
+					return new Response("ignored", { status: 200 });
+				}
+
+				const body = await request.text();
+
+				const sigValid = await verifySignature(
+					body,
+					request.headers.get("X-Hub-Signature-256"),
+					env.GITHUB_WEBHOOK_SECRET,
+				);
+				if (!sigValid) {
+					console.error("[Release] Invalid signature");
+					return new Response("Unauthorized", { status: 401 });
+				}
+
+				const payload = JSON.parse(body);
+				if (payload.action !== "published") {
+					return new Response("ignored", { status: 200 });
+				}
+
+				const text = formatReleaseMessage(payload);
+				await sendToTelegram(env.BOT_TOKEN, env.RELEASE_CHANNEL_ID, text);
+
+				return new Response("ok", { status: 200 });
+			} catch (error) {
+				const errMsg =
+					error instanceof Error
+						? `${error.message}\n${error.stack}`
+						: String(error);
+				console.error("[Release] Handler error:", errMsg);
+				return new Response("Internal Error", { status: 500 });
 			}
 		}
 

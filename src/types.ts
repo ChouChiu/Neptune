@@ -2,6 +2,8 @@ export interface Env {
 	BOT_TOKEN: string;
 	MIMO_API_KEY: string;
 	REUSE_CAPTCHA?: string;
+	GITHUB_WEBHOOK_SECRET: string;
+	RELEASE_CHANNEL_ID: string;
 	db: D1Database;
 	captcha: R2Bucket;
 	aiContext: KVNamespace;
