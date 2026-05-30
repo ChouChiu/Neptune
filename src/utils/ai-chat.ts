@@ -145,6 +145,7 @@ export async function incrementAiUsage(
 export async function callMimoApi(
 	apiKey: string,
 	messages: { role: string; content: string }[],
+	systemPrompt: string = SYSTEM_PROMPT,
 ): Promise<string> {
 	const response = await fetch(`${MIMO_API_ENDPOINT}/chat/completions`, {
 		method: "POST",
@@ -154,7 +155,7 @@ export async function callMimoApi(
 		},
 		body: JSON.stringify({
 			model: "mimo-v2.5",
-			messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+			messages: [{ role: "system", content: systemPrompt }, ...messages],
 			stream: false,
 			temperature: 1.0,
 			top_p: 0.95,
@@ -181,6 +182,7 @@ export async function getChatResponse(
 	userId: number,
 	userMessage: string,
 	isAdmin: boolean = false,
+	groupContext?: { title?: string; memberCount?: number },
 ): Promise<string> {
 	const today = getTodayDate();
 	const usage = await getAiUsageCount(db, userId, groupId, today);
@@ -203,9 +205,13 @@ export async function getChatResponse(
 		content: msg.content,
 	}));
 
+	const systemPrompt = groupContext
+		? `${SYSTEM_PROMPT}\n\n[当前群组信息]\n群组名称：${groupContext.title ?? "未知群组"}\n群组ID：${groupId}${groupContext.memberCount ? `\n成员数：${groupContext.memberCount}` : ""}\n\n请根据群组氛围自然地回应，可以适当提及群组相关的话题。`
+		: SYSTEM_PROMPT;
+
 	let reply: string;
 	try {
-		reply = await callMimoApi(apiKey, apiMessages);
+		reply = await callMimoApi(apiKey, apiMessages, systemPrompt);
 	} catch (error) {
 		console.error("MiMo API call failed:", error);
 		return "涅普？！刚才好像有什么东西掉线了……主角的网络冒险失败了一次，再试一次吧！";

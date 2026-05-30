@@ -152,6 +152,11 @@ export function registerMessageHandler(
 						chatMember.status === "administrator" ||
 						(await isAdminConnected(db, userId, groupId));
 
+					let memberCount: number | undefined;
+					try {
+						memberCount = await ctx.getChatMemberCount();
+					} catch {}
+
 					console.log("AI chat request:", {
 						groupId,
 						userId,
@@ -167,6 +172,10 @@ export function registerMessageHandler(
 						userId,
 						finalMessage,
 						isAdmin,
+						{
+							title: ctx.chat.title,
+							memberCount,
+						},
 					);
 
 					console.log("AI chat response:", {
