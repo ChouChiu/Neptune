@@ -1,0 +1,19 @@
+name = "neptune"
+main = "src/index.ts"
+compatibility_date = "2026-05-30"
+
+[vars]
+REUSE_CAPTCHA = "true"
+
+[[d1_databases]]
+binding = "db"
+database_name = "kazumi-group-bot"
+database_id = "9e6b3925-d917-4537-a3ff-e780268d0979"
+
+[[r2_buckets]]
+bucket_name = "kazumi-captcha"
+binding = "captcha"
+
+[[kv_namespaces]]
+binding = "aiContext"
+id = "dcabc271234f4c4780eff4a64c29a354"
