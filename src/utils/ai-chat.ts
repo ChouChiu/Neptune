@@ -1,5 +1,6 @@
 import type { Context } from "grammy";
 import type { AiContextMessage } from "../types";
+import { DEFAULT_SKILL, matchSkills, skillToText } from "./skills";
 
 const MIMO_API_ENDPOINT = "https://token-plan-sgp.xiaomimimo.com/v1";
 const DAILY_LIMIT = 15;
@@ -205,9 +206,14 @@ export async function getChatResponse(
 		content: msg.content,
 	}));
 
-	const systemPrompt = groupContext
-		? `${SYSTEM_PROMPT}\n\n[当前群组信息]\n群组名称：${groupContext.title ?? "未知群组"}\n群组ID：${groupId}${groupContext.memberCount ? `\n成员数：${groupContext.memberCount}` : ""}\n\n请根据群组氛围自然地回应，可以适当提及群组相关的话题。`
-		: SYSTEM_PROMPT;
+	const matchedSkills = matchSkills(userMessage);
+	let systemPrompt = `${SYSTEM_PROMPT}\n${skillToText(DEFAULT_SKILL)}`;
+	if (matchedSkills.length > 0) {
+		systemPrompt += `\n${matchedSkills.map((s) => skillToText(s)).join("\n")}`;
+	}
+	if (groupContext) {
+		systemPrompt += `\n\n[当前群组信息]\n群组名称：${groupContext.title ?? "未知群组"}\n群组ID：${groupId}${groupContext.memberCount ? `\n成员数：${groupContext.memberCount}` : ""}\n\n请根据群组氛围自然地回应，可以适当提及群组相关的话题。`;
+	}
 
 	let reply: string;
 	try {
