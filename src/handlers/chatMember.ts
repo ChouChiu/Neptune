@@ -164,7 +164,7 @@ export function registerChatMemberHandler(
 					inline_keyboard: [
 						[
 							{
-								text: "我以知晓",
+								text: "我已知晓",
 								callback_data: `rule_ack:${groupId}:${showTime}`,
 							},
 						],
@@ -213,7 +213,7 @@ export function registerChatMemberHandler(
 						inline_keyboard: [
 							[
 								{
-									text: "我以知晓",
+									text: "我已知晓",
 									callback_data: `rule_ack:${groupId}:${showTime}`,
 								},
 							],
