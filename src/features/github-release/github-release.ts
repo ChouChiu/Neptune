@@ -1,4 +1,11 @@
-import { escapeMd } from "../../shared/utils/markdown";
+import {
+	createMarkdownPlaceholderStore,
+	escapeMarkdownCode,
+	escapeMd,
+	markdownBold,
+	markdownLink,
+	trimCodeFencePadding,
+} from "../../shared/utils/markdown";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 4096;
@@ -52,13 +59,7 @@ export async function verifySignature(
 }
 
 export function convertGfmToMarkdownV2(gfm: string): string {
-	const placeholders: string[] = [];
-
-	function protect(content: string): string {
-		const idx = placeholders.length;
-		placeholders.push(content);
-		return `\u200BPH${idx}\u200B`;
-	}
+	const store = createMarkdownPlaceholderStore();
 
 	// strip GitHub callout markers: [!NOTE], [!WARNING], etc.
 	// normalize \r\n → \n first (GitHub payloads use CRLF)
@@ -73,12 +74,14 @@ export function convertGfmToMarkdownV2(gfm: string): string {
 
 	// fenced code blocks → protect (not escaped)
 	text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
-		return protect(`\`\`\`${code}\`\`\``);
+		return store.protect(
+			`\`\`\n${escapeMarkdownCode(trimCodeFencePadding(code))}\n\`\`\``,
+		);
 	});
 
 	// inline code → protect (not escaped)
 	text = text.replace(/`([^`\n]+?)`/g, (_m, code) => {
-		return protect(`\`${code}\``);
+		return store.protect(`\`${escapeMarkdownCode(code)}\``);
 	});
 
 	// images → remove
@@ -86,45 +89,33 @@ export function convertGfmToMarkdownV2(gfm: string): string {
 
 	// links → protect as-is (don't escape inside link syntax)
 	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, linkText, url) => {
-		return protect(`[${linkText}](${url})`);
+		return store.protect(markdownLink(linkText, url));
 	});
 
 	// headings → bold
-	text = text.replace(/^#{1,6}\s+(.+)$/gm, (_m, h) => `*${h}*`);
+	text = text.replace(/^#{1,6}\s+(.+)$/gm, (_m, h) =>
+		store.protect(markdownBold(h)),
+	);
 
 	// list markers: -, *, + at line start → ⦁ (avoid * being parsed as bold)
 	text = text.replace(/^(\s*)[-*+]\s/gm, "$1⦁ ");
 
 	// bold **text** → *text* (MarkdownV2 uses single *)
-	text = text.replace(/\*\*(.+?)\*\*/g, (_m, inner) => `*${inner}*`);
+	text = text.replace(/\*\*(.+?)\*\*/g, (_m, inner) =>
+		store.protect(markdownBold(inner)),
+	);
 
 	// blockquotes: "> text" → protect as Telegram ">text" (not escaped)
 	text = text.replace(/^>\s?(.*)$/gm, (_m, content: string) => {
 		const trimmed = content.trim();
 		if (!trimmed) return "";
-		return protect(`>${trimmed}`);
+		return store.protect(`>${escapeMd(trimmed)}`);
 	});
 
 	// strip HTML tags
 	text = text.replace(/<[^>]+>/g, "");
 
-	// escape plain text outside placeholders
-	text = text.replace(
-		/([\s\S]*?)(\u200BPH\d+\u200B|$)/g,
-		(_m, plain: string, ph: string) => {
-			return escapeMd(plain) + (ph ?? "");
-		},
-	);
-
-	// restore placeholders
-	for (let i = 0; i < placeholders.length; i++) {
-		const ph = placeholders[i];
-		if (ph !== undefined) {
-			text = text.replaceAll(`\u200BPH${i}\u200B`, ph);
-		}
-	}
-
-	return text;
+	return store.restore(escapeMd(text));
 }
 
 export function formatReleaseMessage(release: GitHubRelease): string {
@@ -138,7 +129,7 @@ export function formatReleaseMessage(release: GitHubRelease): string {
 	const bodyMd = body ? convertGfmToMarkdownV2(body) : "";
 
 	const releaseUrl = release.release.html_url;
-	const linkLine = `[🔗 Release 页面](${releaseUrl})`;
+	const linkLine = markdownLink("🔗 Release 页面", releaseUrl);
 
 	let message: string;
 	if (bodyMd) {

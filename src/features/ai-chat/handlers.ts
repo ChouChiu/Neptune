@@ -1,6 +1,6 @@
 import type { Bot, Context } from "grammy";
 import { isAdminConnected } from "../../shared/db/queries";
-import { escapeMarkdown } from "../../shared/utils/markdown";
+import { formatGeneratedMarkdownV2 } from "../../shared/utils/markdown";
 import { replyOptions, replyOptionsWithParse } from "../../shared/utils/reply";
 import { getChatResponse, shouldTriggerAi } from "./ai-chat";
 
@@ -73,7 +73,10 @@ export async function handleAiChat(
 			length: reply.length,
 			preview: reply.substring(0, 50),
 		});
-		await ctx.reply(escapeMarkdown(reply), replyOptionsWithParse(ctx));
+		await ctx.reply(
+			formatGeneratedMarkdownV2(reply),
+			replyOptionsWithParse(ctx),
+		);
 	} catch (error) {
 		console.error("AI chat error:", error);
 		try {
