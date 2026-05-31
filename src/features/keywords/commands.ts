@@ -20,7 +20,7 @@ export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 		const args = ctx.match?.toString().trim();
 		if (!args) {
 			await ctx.reply(
-				"用法: /addkeyword <关键词> <回复内容>\n支持占位符: {nickname} {userid}",
+				"用法: /addkeyword <关键词> <回复内容>",
 				replyOptions(ctx),
 			);
 			return;
