@@ -80,7 +80,7 @@ bunx wrangler kv namespace create aiContext
 ### 初始化数据库
 
 ```bash
-bunx wrangler d1 execute neptune --remote --file=src/db/schema.sql
+bunx wrangler d1 execute neptune --remote --file=src/shared/db/schema.sql
 bunx wrangler d1 execute neptune --remote --file=migrations/003_ai_chat_usage.sql
 bunx wrangler d1 execute neptune --remote --file=migrations/004_rule.sql
 bunx wrangler d1 execute neptune --remote --file=migrations/005_captcha_attempts.sql
@@ -113,38 +113,32 @@ bun run typecheck     # TypeScript 类型检查
 ```
 src/
 ├── index.ts              # Workers 入口：路由 /webhook, /set-webhook, /test, /github-webhook
-├── bot.ts                # createBot(env) —— 注册所有命令和处理器
+├── bot.ts                # createBot(env) —— 调用 registerFeatures()
 ├── types.ts              # Env 接口 + 数据模型定义
-├── commands/             # Bot 命令实现
-│   ├── admin.ts          # /connect, /switch, /id（管理员绑定与切换）
-│   ├── help.ts           # /help
-│   ├── keywords.ts       # /addkeyword, /addregex, /listkeywords, /removekeyword
-│   ├── ping.ts           # /ping
-│   ├── rule.ts           # /rule（群规管理）
-│   ├── verify.ts         # /setverifybutton, /setverifytimeout, /testverify
-│   ├── votekick.ts       # /enablevotekick, /disablevotekick, /kick
-│   └── welcome.ts        # /setwelcome, /enablewelcome, /disablewelcome
-├── handlers/             # 事件处理器
-│   ├── chatMember.ts     # 入群事件 → 欢迎 + 群规 + 验证码流程
-│   ├── message.ts        # 消息事件 → 关键词匹配 + AI 聊天 + 验证码回复
-│   └── votekick.ts       # 投票踢人回调处理
-├── db/
-│   ├── schema.sql        # 数据库表结构
-│   └── queries.ts        # 所有数据库查询（唯一 DB 访问入口）
-└── utils/
-    ├── ai-chat.ts        # AI 聊天（MiMo API + KV 上下文 + 用量限制 + 超时重试）
-    ├── botInfo.ts        # Bot 信息缓存（带 inflight 去重）
-    ├── captcha.ts        # BMP 验证码生成 & R2 存储
-    ├── github-release.ts # GitHub Release → Telegram MarkdownV2 格式化
-    ├── nickname.ts       # getNickname() 用户昵称拼接
-    ├── permissions.ts    # 管理员权限检查
-    ├── placeholders.ts   # {nickname}, {userid}, {groupname} 占位符替换
-    ├── reply.ts          # replyOptions() + escapeMarkdown()
-    ├── skills.ts         # AI 技能匹配（基于关键词触发）
-    ├── system-prompt.json # Neptune 人格系统提示词
-    └── vote.ts           # buildVoteText() + VOTE_THRESHOLD（投票踢人共享）
-migrations/               # 数据库迁移文件
+├── features/             # 按功能模块组织
+│   ├── index.ts          # registerFeatures() 统一注册所有功能
+│   ├── message-orchestrator.ts  # 消息分发：DM→验证码, 群组→AI→关键词
+│   ├── admin/            # /id, /connect, /switch
+│   ├── help/             # /help
+│   ├── ping/             # /ping
+│   ├── rule/             # /rule（群规管理）
+│   ├── welcome/          # /setwelcome, 入群事件处理
+│   ├── verify/           # /setverifybutton, /testverify, /start verify, 验证码流程
+│   ├── keywords/         # /addkeyword, 关键词匹配处理
+│   ├── ai-chat/          # AI 聊天（MiMo API, skills, 上下文管理）
+│   ├── votekick/         # /kick, 投票回调处理
+│   └── github-release/   # GitHub webhook → Telegram
+├── shared/               # 跨功能共享代码
+│   ├── db/               # schema.sql + queries.ts（唯一 DB 访问入口）
+│   └── utils/            # botInfo, captcha, markdown, nickname, permissions, placeholders, reply, resolve-group
+└── migrations/           # 数据库迁移文件
 ```
+
+每个功能文件夹包含：
+- `commands.ts` — 斜杠命令处理
+- `handlers.ts` — 事件/回调处理
+- `index.ts` — 注册该功能（`registerXxxFeature(bot, db, ...)`）
+- 内部工具（如 `vote.ts`, `skills.ts`）仅当功能特有时
 
 ### 数据库表
 
@@ -163,12 +157,12 @@ migrations/               # 数据库迁移文件
 
 ### 添加新命令
 
-1. 在 `src/commands/` 下创建文件（或在已有文件中添加）：
+1. 在 `src/features/` 下对应功能文件夹中创建或编辑 `commands.ts`：
 
 ```typescript
 import type { Bot } from "grammy";
 import type { D1Database } from "@cloudflare/workers-types";
-import { replyOptions } from "../utils/reply";
+import { replyOptions } from "../../shared/utils/reply";
 
 export function registerMyCommands(bot: Bot, db: D1Database): void {
 	bot.command("mycommand", async (ctx) => {
@@ -178,15 +172,19 @@ export function registerMyCommands(bot: Bot, db: D1Database): void {
 }
 ```
 
-2. 在 `src/bot.ts` 中注册：
+2. 在功能文件夹的 `index.ts` 中注册：
 
 ```typescript
-import { registerMyCommands } from "./commands/mycommand";
-// ...
-registerMyCommands(bot, env.db);
+import type { Bot } from "grammy";
+import { registerMyCommands } from "./commands";
+
+export function registerMyFeature(bot: Bot, db: D1Database): void {
+	registerMyCommands(bot, db);
+}
 ```
 
-3. 在 `src/index.ts` 的 `setMyCommands` 中添加命令描述（用于 `/set-webhook` 同步到 BotFather）。
+3. 在 `src/features/index.ts` 中添加 `registerMyFeature` 调用。
+4. 在 `src/index.ts` 的 `setMyCommands` 中添加命令描述（用于 `/set-webhook` 同步到 BotFather）。
 
 > 重要：`/set-webhook` 需要 `?token=<GITHUB_WEBHOOK_SECRET>` 认证，新命令添加后需重新访问该 URL 同步。
 
@@ -195,7 +193,7 @@ registerMyCommands(bot, env.db);
 使用 `checkAdminPermission()` 检查权限：
 
 ```typescript
-import { checkAdminPermission } from "../utils/permissions";
+import { checkAdminPermission } from "../../shared/utils/permissions";
 
 bot.command("adminonly", async (ctx) => {
 	const { allowed, groupId } = await checkAdminPermission(db, ctx);
@@ -210,8 +208,8 @@ bot.command("adminonly", async (ctx) => {
 ### 数据库迁移
 
 1. 在 `migrations/` 下创建迁移文件，命名格式：`NNN_description.sql`
-2. 编写 SQL（参考 `src/db/schema.sql` 中的表结构）
-3. 在 `src/db/queries.ts` 中添加对应的查询函数
+2. 编写 SQL（参考 `src/shared/db/schema.sql` 中的表结构）
+3. 在 `src/shared/db/queries.ts` 中添加对应的查询函数
 4. 部署后手动执行迁移：
 
 ```bash
@@ -223,7 +221,7 @@ bunx wrangler d1 execute neptune --remote --file=migrations/NNN_description.sql
 ### AI 聊天功能
 
 - 触发方式：@机器人 或回复机器人消息
-- 系统提示词（Neptune 人格）在 `src/utils/system-prompt.json`，由 `systemPromptToText()` 渲染
+- 系统提示词（Neptune 人格）在 `src/features/ai-chat/system-prompt.json`，由 `systemPromptToText()` 渲染
 - 上下文存储在 KV（`aiContext`），按 `ai:context:{groupId}` 键存储，限制最近 50 条消息（7 天窗口）
 - API 调用有 25 秒超时（AbortController），429/5xx 错误自动重试最多 2 次
 - 每日用量限制：普通用户 15 次/天，管理员不限（记录在 `ai_chat_usage` 表）
@@ -234,6 +232,7 @@ bunx wrangler d1 execute neptune --remote --file=migrations/NNN_description.sql
 - 使用 `chinese-conv`（`sify()`）自动处理繁简中文互匹配
 - 正则规则在 `keywordCache`（60s TTL）中编译为 `RegExp` 对象缓存
 - `/addregex` 会校验正则长度（≤200 字符）和复杂度（100ms 阈值），防止 ReDoS
+- 匹配逻辑在 `src/features/keywords/handlers.ts` 的 `matchKeyword()` 函数
 
 ### 验证码与入群认证
 
@@ -287,7 +286,7 @@ docs: 更新 README 命令列表
 - 如涉及新功能，请在 PR 描述中说明使用方式
 - 如涉及数据库变更，请在 `migrations/` 中添加迁移文件
 - 如涉及新命令，请同步更新 README 的命令列表和 `src/index.ts` 中的 `setMyCommands`
-- 如涉及新 bot 消息类型，请检查 `shouldTriggerAi()` 的系统消息关键词列表是否需要更新
+- 如涉及新 bot 消息类型，请检查 `shouldTriggerAi()` 的系统消息关键词列表是否需要更新（`src/features/ai-chat/ai-chat.ts`）
 
 ## License
 

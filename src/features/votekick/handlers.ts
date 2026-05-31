@@ -4,9 +4,9 @@ import {
 	deleteActiveVote,
 	getActiveVote,
 	getVoteCounts,
-} from "../db/queries";
-import { getNickname } from "../utils/nickname";
-import { buildVoteText, VOTE_THRESHOLD } from "../utils/vote";
+} from "../../shared/db/queries";
+import { getNickname } from "../../shared/utils/nickname";
+import { buildVoteText, VOTE_THRESHOLD } from "./vote";
 
 export function registerVotekickHandler(bot: Bot, db: D1Database): void {
 	bot.callbackQuery(/^vk:(.+):([01])$/, async (ctx) => {

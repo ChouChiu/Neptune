@@ -1,7 +1,10 @@
 import type { Bot } from "grammy";
-import { setWelcomeEnabled, updateWelcomeMessage } from "../db/queries";
-import { checkAdminPermission } from "../utils/permissions";
-import { replyOptions } from "../utils/reply";
+import {
+	setWelcomeEnabled,
+	updateWelcomeMessage,
+} from "../../shared/db/queries";
+import { checkAdminPermission } from "../../shared/utils/permissions";
+import { replyOptions } from "../../shared/utils/reply";
 
 export function registerWelcomeCommands(bot: Bot, db: D1Database): void {
 	bot.command("setwelcome", async (ctx) => {

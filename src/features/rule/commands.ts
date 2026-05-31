@@ -1,7 +1,7 @@
 import type { Bot } from "grammy";
-import { getGroupConfig, updateGroupRule } from "../db/queries";
-import { checkAdminPermission } from "../utils/permissions";
-import { replyOptions } from "../utils/reply";
+import { getGroupConfig, updateGroupRule } from "../../shared/db/queries";
+import { checkAdminPermission } from "../../shared/utils/permissions";
+import { replyOptions } from "../../shared/utils/reply";
 
 export function registerRuleCommands(bot: Bot, db: D1Database): void {
 	bot.command("rule", async (ctx) => {

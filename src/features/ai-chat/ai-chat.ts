@@ -1,5 +1,5 @@
 import type { Context } from "grammy";
-import type { AiContextMessage } from "../types";
+import type { AiContextMessage } from "../../types";
 import { DEFAULT_SKILL, matchSkills, skillToText } from "./skills";
 import systemPromptData from "./system-prompt.json";
 

@@ -1,16 +1,11 @@
 import { type Bot, InputFile } from "grammy";
 import {
 	addPendingVerification,
-	cleanExpiredVerifications,
 	getGroupConfig,
 	getPendingVerification,
-} from "../db/queries";
-import { getBotUsername } from "../utils/botInfo";
-import { generateCaptcha, uploadCaptchaToR2 } from "../utils/captcha";
-import { escapeMarkdown } from "../utils/markdown";
-import { getNickname } from "../utils/nickname";
-import { replacePlaceholders } from "../utils/placeholders";
-import { replyOptions } from "../utils/reply";
+} from "../../shared/db/queries";
+import { escapeMarkdown } from "../../shared/utils/markdown";
+import { replyOptions } from "../../shared/utils/reply";
 
 const RULE_ACK_WAIT_SECONDS = 10;
 
@@ -22,95 +17,35 @@ function buildRuleText(rule: string, remaining: number): string {
 	return `📋 *群规*\n\n${escapeMarkdown(rule)}${countdown}`;
 }
 
-export function registerChatMemberHandler(
+export async function restrictUser(
+	api: Bot["api"],
+	groupId: number,
+	userId: number,
+): Promise<void> {
+	await api.restrictChatMember(groupId, userId, {
+		can_send_messages: false,
+		can_send_audios: false,
+		can_send_documents: false,
+		can_send_photos: false,
+		can_send_videos: false,
+		can_send_video_notes: false,
+		can_send_voice_notes: false,
+		can_send_polls: false,
+		can_send_other_messages: false,
+		can_add_web_page_previews: false,
+		can_change_info: false,
+		can_invite_users: false,
+		can_pin_messages: false,
+		can_manage_topics: false,
+	});
+}
+
+export function registerVerifyHandlers(
 	bot: Bot,
 	db: D1Database,
 	bucket: R2Bucket,
 	reuseCaptcha = false,
 ): void {
-	bot.on("message:new_chat_members", async (ctx) => {
-		const newMembers = ctx.message.new_chat_members;
-		if (!newMembers) return;
-
-		const groupId = ctx.chat.id;
-
-		const config = await getGroupConfig(db, groupId);
-		if (!config?.welcome_enabled) return;
-
-		await cleanExpiredVerifications(db);
-
-		try {
-			await ctx.api.deleteMessage(groupId, ctx.message.message_id);
-		} catch (error) {
-			console.error("Failed to delete join message:", error);
-		}
-
-		for (const newMember of newMembers) {
-			if (newMember.is_bot) continue;
-
-			const userId = newMember.id;
-			const nickname = getNickname(newMember);
-
-			const welcomeText = replacePlaceholders(config.welcome_message, {
-				nickname: escapeMarkdown(nickname),
-				userid: userId,
-				groupname: ctx.chat.title ? escapeMarkdown(ctx.chat.title) : undefined,
-			});
-
-			const botUsername = await getBotUsername(ctx.api);
-			const verifyUrl = `https://t.me/${botUsername}?start=verify${groupId}_${userId}`;
-
-			const welcomeMsg = await ctx.reply(welcomeText, {
-				parse_mode: "MarkdownV2",
-				reply_markup: {
-					inline_keyboard: [
-						[
-							{
-								text: config.verify_button_text,
-								url: verifyUrl,
-							},
-						],
-					],
-				},
-			});
-
-			const timeout = config.verify_timeout;
-			const expiresAt = Math.floor(Date.now() / 1000) + timeout + 300;
-			await addPendingVerification(
-				db,
-				userId,
-				groupId,
-				"",
-				expiresAt,
-				welcomeMsg.message_id,
-			);
-
-			try {
-				await ctx.api.restrictChatMember(groupId, userId, {
-					can_send_messages: false,
-					can_send_audios: false,
-					can_send_documents: false,
-					can_send_photos: false,
-					can_send_videos: false,
-					can_send_video_notes: false,
-					can_send_voice_notes: false,
-					can_send_polls: false,
-					can_send_other_messages: false,
-					can_add_web_page_previews: false,
-					can_change_info: false,
-					can_invite_users: false,
-					can_pin_messages: false,
-					can_manage_topics: false,
-				});
-			} catch (error) {
-				console.error(
-					"Failed to restrict user:",
-					error instanceof Error ? error.message : error,
-				);
-			}
-		}
-	});
-
 	bot.command("start", async (ctx) => {
 		if (ctx.chat.type !== "private") return;
 
@@ -263,6 +198,9 @@ async function sendCaptcha(
 	reuseCaptcha: boolean,
 	welcomeMsgId?: number,
 ): Promise<void> {
+	const { generateCaptcha, uploadCaptchaToR2 } = await import(
+		"../../shared/utils/captcha"
+	);
 	const captcha = await generateCaptcha(bucket, 5, reuseCaptcha);
 	const captchaKey = `captcha/${groupId}/${userId}.bmp`;
 	await uploadCaptchaToR2(bucket, captchaKey, captcha.bmp);

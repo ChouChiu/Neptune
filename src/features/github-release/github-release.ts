@@ -1,4 +1,4 @@
-import { escapeMd } from "./markdown";
+import { escapeMd } from "../../shared/utils/markdown";
 
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 4096;

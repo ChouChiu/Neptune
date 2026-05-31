@@ -88,6 +88,18 @@ AI 聊天
 3. 在私聊中发送 `/switch` 选择要管理的群组
 4. 使用各种命令配置群组功能
 
+## 开发
+
+详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+```bash
+bun install           # 安装依赖
+bun run dev           # 本地开发
+bun run lint          # Biome 检查
+bun run typecheck     # TypeScript 类型检查
+bun run deploy        # 部署到 Cloudflare
+```
+
 ## License
 
 MIT

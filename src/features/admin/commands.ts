@@ -1,16 +1,12 @@
-import type { Bot, CommandContext, Context } from "grammy";
+import type { Bot } from "grammy";
 import {
 	connectAdmin,
 	getAdminGroupId,
 	getAdminGroups,
-	getGroupConfig,
 	setCurrentGroup,
-} from "../db/queries";
-import { getBotUsername } from "../utils/botInfo";
-import { escapeMarkdown } from "../utils/markdown";
-import { getNickname } from "../utils/nickname";
-import { checkAdminPermission } from "../utils/permissions";
-import { replyOptions, replyOptionsWithParse } from "../utils/reply";
+} from "../../shared/db/queries";
+import { escapeMarkdown } from "../../shared/utils/markdown";
+import { replyOptions, replyOptionsWithParse } from "../../shared/utils/reply";
 
 export function registerAdminCommands(bot: Bot, db: D1Database): void {
 	bot.command("id", async (ctx) => {
@@ -122,57 +118,6 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 		});
 	});
 
-	bot.command("testverify", async (ctx) => {
-		if (ctx.chat.type === "private") {
-			await ctx.reply(
-				escapeMarkdown("请在群组中使用此命令。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
-
-		// 检查管理员权限
-		const { allowed } = await checkAdminPermission(db, ctx);
-		if (!allowed) {
-			await ctx.reply(
-				escapeMarkdown("只有管理员才能使用此命令。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
-
-		const groupId = ctx.chat.id;
-		const config = await getGroupConfig(db, groupId);
-		if (!config?.welcome_enabled) {
-			await ctx.reply(
-				escapeMarkdown("请先使用 /enablewelcome 启用入群欢迎。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
-
-		if (!ctx.from) return;
-
-		const userId = ctx.from.id;
-		const nickname = getNickname(ctx.from);
-
-		const botUsername = await getBotUsername(ctx.api);
-		const verifyUrl = `https://t.me/${botUsername}?start=verify${groupId}_${userId}`;
-
-		await ctx.reply(`测试验证消息\n\n欢迎 ${nickname} 来到群组！`, {
-			reply_markup: {
-				inline_keyboard: [
-					[
-						{
-							text: config.verify_button_text,
-							url: verifyUrl,
-						},
-					],
-				],
-			},
-		});
-	});
-
 	bot.callbackQuery(/^switch:(-?\d+)$/, async (ctx) => {
 		const match = ctx.match;
 		if (!match?.[1]) return;
@@ -201,23 +146,4 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 			reply_markup: { inline_keyboard: buttons },
 		});
 	});
-}
-
-export async function resolveGroupId(
-	db: D1Database,
-	ctx: CommandContext<Context>,
-): Promise<number | null> {
-	if (ctx.chat.type === "private") {
-		if (!ctx.from) return null;
-		const groupId = await getAdminGroupId(db, ctx.from.id);
-		if (!groupId) {
-			return null;
-		}
-		return groupId;
-	}
-	// 群组中自动添加关联
-	if (ctx.from) {
-		await connectAdmin(db, ctx.from.id, ctx.chat.id);
-	}
-	return ctx.chat.id;
 }

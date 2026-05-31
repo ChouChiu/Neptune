@@ -3,7 +3,7 @@ import type {
 	GroupConfig,
 	KeywordRule,
 	PendingVerification,
-} from "../types";
+} from "../../types";
 
 export async function initGroup(
 	db: D1Database,

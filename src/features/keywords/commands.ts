@@ -1,8 +1,12 @@
 import type { Bot } from "grammy";
-import { addKeyword, getKeywords, removeKeyword } from "../db/queries";
-import { escapeMarkdown } from "../utils/markdown";
-import { checkAdminPermission } from "../utils/permissions";
-import { replyOptions, replyOptionsWithParse } from "../utils/reply";
+import {
+	addKeyword,
+	getKeywords,
+	removeKeyword,
+} from "../../shared/db/queries";
+import { escapeMarkdown } from "../../shared/utils/markdown";
+import { checkAdminPermission } from "../../shared/utils/permissions";
+import { replyOptions, replyOptionsWithParse } from "../../shared/utils/reply";
 
 export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 	bot.command("addkeyword", async (ctx) => {

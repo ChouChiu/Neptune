@@ -6,11 +6,11 @@ import {
 	getLastVoteByInitiator,
 	setVotekickEnabled,
 	updateVoteMessageId,
-} from "../db/queries";
-import { getNickname } from "../utils/nickname";
-import { checkAdminPermission } from "../utils/permissions";
-import { replyOptions } from "../utils/reply";
-import { buildVoteText } from "../utils/vote";
+} from "../../shared/db/queries";
+import { getNickname } from "../../shared/utils/nickname";
+import { checkAdminPermission } from "../../shared/utils/permissions";
+import { replyOptions } from "../../shared/utils/reply";
+import { buildVoteText } from "./vote";
 
 const VOTE_DURATION = 300;
 const INITIATOR_COOLDOWN = 60;

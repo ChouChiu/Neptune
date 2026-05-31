@@ -1,11 +1,11 @@
 import { webhookCallback } from "grammy";
 import { createBot } from "./bot";
-import type { Env } from "./types";
 import {
 	formatReleaseMessage,
 	sendToTelegram,
 	verifySignature,
-} from "./utils/github-release";
+} from "./features/github-release";
+import type { Env } from "./types";
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
