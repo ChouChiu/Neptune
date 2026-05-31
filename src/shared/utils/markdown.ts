@@ -61,7 +61,7 @@ export function trimCodeFencePadding(code: string): string {
 
 function formatCodeBlock(language: string, code: string): string {
 	const trimmedLanguage = language.trim();
-	const safeLanguage = /^[A-Za-z0-9_-]+$/.test(trimmedLanguage)
+	const safeLanguage = /^[A-Za-z0-9]+$/.test(trimmedLanguage)
 		? trimmedLanguage
 		: "";
 	const openingFence = safeLanguage ? `\`\`\`${safeLanguage}\n` : "```\n";

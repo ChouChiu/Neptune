@@ -73,10 +73,16 @@ export async function handleAiChat(
 			length: reply.length,
 			preview: reply.substring(0, 50),
 		});
-		await ctx.reply(
-			formatGeneratedMarkdownV2(reply),
-			replyOptionsWithParse(ctx),
-		);
+		const formattedReply = formatGeneratedMarkdownV2(reply);
+		try {
+			await ctx.reply(formattedReply, replyOptionsWithParse(ctx));
+		} catch (sendError) {
+			console.error("AI chat MarkdownV2 send failed:", {
+				error: sendError,
+				formattedPreview: formattedReply.substring(0, 200),
+			});
+			await ctx.reply(reply, replyOptions(ctx));
+		}
 	} catch (error) {
 		console.error("AI chat error:", error);
 		try {
