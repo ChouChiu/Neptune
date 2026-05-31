@@ -7,6 +7,7 @@ import {
 	setCurrentGroup,
 } from "../db/queries";
 import { getBotUsername } from "../utils/botInfo";
+import { escapeMarkdown } from "../utils/markdown";
 import { getNickname } from "../utils/nickname";
 import { checkAdminPermission } from "../utils/permissions";
 import { replyOptions, replyOptionsWithParse } from "../utils/reply";
@@ -16,7 +17,7 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 		const chat = ctx.chat;
 		if (chat.type === "private") {
 			await ctx.reply(
-				"请在群组中使用此命令获取群组 ID。",
+				escapeMarkdown("请在群组中使用此命令获取群组 ID。"),
 				replyOptionsWithParse(ctx),
 			);
 			return;
@@ -31,24 +32,36 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 	bot.command("connect", async (ctx) => {
 		const chat = ctx.chat;
 		if (chat.type !== "private") {
-			await ctx.reply("请在私聊中使用此命令。", replyOptionsWithParse(ctx));
+			await ctx.reply(
+				escapeMarkdown("请在私聊中使用此命令。"),
+				replyOptionsWithParse(ctx),
+			);
 			return;
 		}
 
 		const args = ctx.match?.toString().trim();
 		if (!args) {
-			await ctx.reply("用法: /connect <群组ID>", replyOptionsWithParse(ctx));
+			await ctx.reply(
+				escapeMarkdown("用法: /connect <群组ID>"),
+				replyOptionsWithParse(ctx),
+			);
 			return;
 		}
 
 		const groupId = Number.parseInt(args, 10);
 		if (Number.isNaN(groupId)) {
-			await ctx.reply("无效的群组 ID。", replyOptionsWithParse(ctx));
+			await ctx.reply(
+				escapeMarkdown("无效的群组 ID。"),
+				replyOptionsWithParse(ctx),
+			);
 			return;
 		}
 
 		if (!ctx.from) {
-			await ctx.reply("无法获取用户信息。", replyOptionsWithParse(ctx));
+			await ctx.reply(
+				escapeMarkdown("无法获取用户信息。"),
+				replyOptionsWithParse(ctx),
+			);
 			return;
 		}
 
@@ -57,14 +70,16 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 			const chatMember = await ctx.api.getChatMember(groupId, ctx.from.id);
 			if (!["administrator", "creator"].includes(chatMember.status)) {
 				await ctx.reply(
-					"你不是该群组的管理员，无法绑定。",
+					escapeMarkdown("你不是该群组的管理员，无法绑定。"),
 					replyOptionsWithParse(ctx),
 				);
 				return;
 			}
 		} catch (error) {
 			await ctx.reply(
-				`无法验证群组权限: ${error instanceof Error ? error.message : String(error)}`,
+				escapeMarkdown(
+					`无法验证群组权限: ${error instanceof Error ? error.message : String(error)}`,
+				),
 				replyOptionsWithParse(ctx),
 			);
 			return;
@@ -72,7 +87,7 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 
 		await connectAdmin(db, ctx.from.id, groupId);
 		await ctx.reply(
-			`已绑定到群组 ${groupId}。现在可以在私聊中管理该群组。`,
+			escapeMarkdown(`已绑定到群组 ${groupId}。现在可以在私聊中管理该群组。`),
 			replyOptionsWithParse(ctx),
 		);
 	});
@@ -109,14 +124,20 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 
 	bot.command("testverify", async (ctx) => {
 		if (ctx.chat.type === "private") {
-			await ctx.reply("请在群组中使用此命令。", replyOptionsWithParse(ctx));
+			await ctx.reply(
+				escapeMarkdown("请在群组中使用此命令。"),
+				replyOptionsWithParse(ctx),
+			);
 			return;
 		}
 
 		// 检查管理员权限
 		const { allowed } = await checkAdminPermission(db, ctx);
 		if (!allowed) {
-			await ctx.reply("只有管理员才能使用此命令。", replyOptionsWithParse(ctx));
+			await ctx.reply(
+				escapeMarkdown("只有管理员才能使用此命令。"),
+				replyOptionsWithParse(ctx),
+			);
 			return;
 		}
 
@@ -124,7 +145,7 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 		const config = await getGroupConfig(db, groupId);
 		if (!config?.welcome_enabled) {
 			await ctx.reply(
-				"请先使用 /enablewelcome 启用入群欢迎。",
+				escapeMarkdown("请先使用 /enablewelcome 启用入群欢迎。"),
 				replyOptionsWithParse(ctx),
 			);
 			return;

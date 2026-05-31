@@ -1,7 +1,8 @@
 import type { Bot } from "grammy";
+import { escapeMarkdown } from "../utils/markdown";
 import { replyOptionsWithParse } from "../utils/reply";
 
-const HELP_TEXT = `📋 *命令列表*
+const HELP_TEXT = escapeMarkdown(`📋 *命令列表*
 
 🔹 *通用*
 /help - 显示此帮助信息
@@ -19,7 +20,7 @@ const HELP_TEXT = `📋 *命令列表*
 
 🔹 *入群认证*
 /setverifybutton <文案> - 设置认证按钮文案
-/setverifytimeout <秒> - 设置认证超时时间
+/setverifytimeout <秒> - 设置验证超时时间
 /testverify - 测试验证消息
 /rule <内容> - 设置群规（入群需阅读）
 
@@ -34,7 +35,7 @@ const HELP_TEXT = `📋 *命令列表*
 /disablevotekick - 禁用投票踢人
 /kick - 回复目标用户消息发起踢人投票
 
-💡 *占位符*: {nickname} {userid} {groupname}`;
+💡 *占位符*: {nickname} {userid} {groupname}`);
 
 export function registerHelpCommand(bot: Bot): void {
 	bot.command("help", async (ctx) => {

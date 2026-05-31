@@ -1,11 +1,8 @@
 import type { Bot } from "grammy";
 import { addKeyword, getKeywords, removeKeyword } from "../db/queries";
+import { escapeMarkdown } from "../utils/markdown";
 import { checkAdminPermission } from "../utils/permissions";
-import {
-	escapeMarkdown,
-	replyOptions,
-	replyOptionsWithParse,
-} from "../utils/reply";
+import { replyOptions, replyOptionsWithParse } from "../utils/reply";
 
 export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 	bot.command("addkeyword", async (ctx) => {
@@ -111,9 +108,10 @@ export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 				return;
 			}
 
-			const lines = keywords.map(
-				(k, i) =>
-					`${i + 1}. ${k.is_regex ? "🔍" : "🔤"} ${escapeMarkdown(k.pattern)} → ${escapeMarkdown(k.reply_content)}`,
+			const lines = keywords.map((k, i) =>
+				escapeMarkdown(
+					`${i + 1}. ${k.is_regex ? "🔍" : "🔤"} ${k.pattern} → ${k.reply_content}`,
+				),
 			);
 			const text = `📋 *关键词规则*\n\n${lines.join("\n")}`;
 			try {

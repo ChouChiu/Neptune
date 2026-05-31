@@ -1,3 +1,5 @@
+import { escapeMd } from "./markdown";
+
 const TELEGRAM_API = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 4096;
 const MAX_RETRIES = 3;
@@ -47,12 +49,6 @@ export async function verifySignature(
 		result |= computed.charCodeAt(i) ^ signatureHeader.charCodeAt(i);
 	}
 	return result === 0;
-}
-
-const MDV2_SPECIAL = /[_[\]()~`>#+\-=|{}.!\\]/g;
-
-function escapeMd(text: string): string {
-	return text.replace(MDV2_SPECIAL, "\\$&");
 }
 
 export function convertGfmToMarkdownV2(gfm: string): string {

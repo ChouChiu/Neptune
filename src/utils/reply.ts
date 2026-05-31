@@ -1,9 +1,5 @@
 import type { Context } from "grammy";
 
-export function escapeMarkdown(text: string): string {
-	return text.replace(/[_[\]()~`>#+\-=|{}.!\\]/g, "\\$&");
-}
-
 export function replyOptions(ctx: Context) {
 	return {
 		reply_parameters: ctx.message
@@ -14,7 +10,7 @@ export function replyOptions(ctx: Context) {
 
 export function replyOptionsWithParse(ctx: Context) {
 	return {
-		parse_mode: "Markdown" as const,
+		parse_mode: "MarkdownV2" as const,
 		reply_parameters: ctx.message
 			? { message_id: ctx.message.message_id }
 			: undefined,

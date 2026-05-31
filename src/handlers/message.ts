@@ -7,13 +7,10 @@ import {
 } from "../db/queries";
 import type { KeywordRule } from "../types";
 import { getChatResponse, shouldTriggerAi } from "../utils/ai-chat";
+import { escapeMarkdown } from "../utils/markdown";
 import { getNickname } from "../utils/nickname";
 import { replacePlaceholders } from "../utils/placeholders";
-import {
-	escapeMarkdown,
-	replyOptions,
-	replyOptionsWithParse,
-} from "../utils/reply";
+import { replyOptions, replyOptionsWithParse } from "../utils/reply";
 
 interface CompiledKeywordRule {
 	rule: KeywordRule;
@@ -224,7 +221,7 @@ export function registerMessageHandler(
 						length: reply.length,
 						preview: reply.substring(0, 50),
 					});
-					await ctx.reply(reply, replyOptionsWithParse(ctx));
+					await ctx.reply(escapeMarkdown(reply), replyOptionsWithParse(ctx));
 				} catch (error) {
 					console.error("AI chat error:", error);
 					try {
@@ -247,11 +244,16 @@ export function registerMessageHandler(
 
 			const nickname = ctx.from ? getNickname(ctx.from) : "unknown";
 
-			const replyContent = replacePlaceholders(matchedRule.reply_content, {
-				nickname: escapeMarkdown(nickname),
-				userid: ctx.from?.id,
-				groupname: ctx.chat.title ? escapeMarkdown(ctx.chat.title) : undefined,
-			});
+			const replyContent = replacePlaceholders(
+				escapeMarkdown(matchedRule.reply_content),
+				{
+					nickname: escapeMarkdown(nickname),
+					userid: ctx.from?.id,
+					groupname: ctx.chat.title
+						? escapeMarkdown(ctx.chat.title)
+						: undefined,
+				},
+			);
 
 			await ctx.reply(replyContent, replyOptionsWithParse(ctx));
 		}

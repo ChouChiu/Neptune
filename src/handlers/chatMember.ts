@@ -7,9 +7,10 @@ import {
 } from "../db/queries";
 import { getBotUsername } from "../utils/botInfo";
 import { generateCaptcha, uploadCaptchaToR2 } from "../utils/captcha";
+import { escapeMarkdown } from "../utils/markdown";
 import { getNickname } from "../utils/nickname";
 import { replacePlaceholders } from "../utils/placeholders";
-import { escapeMarkdown, replyOptions } from "../utils/reply";
+import { replyOptions } from "../utils/reply";
 
 const RULE_ACK_WAIT_SECONDS = 10;
 
@@ -18,7 +19,7 @@ function buildRuleText(rule: string, remaining: number): string {
 		remaining > 0
 			? `\n\n⏱️ ${remaining} 秒后可点击下方按钮`
 			: "\n\n✅ 阅读时间已到，请点击下方按钮";
-	return `📋 *群规*\n\n${rule}${countdown}`;
+	return `📋 *群规*\n\n${escapeMarkdown(rule)}${countdown}`;
 }
 
 export function registerChatMemberHandler(
@@ -60,7 +61,7 @@ export function registerChatMemberHandler(
 			const verifyUrl = `https://t.me/${botUsername}?start=verify${groupId}_${userId}`;
 
 			const welcomeMsg = await ctx.reply(welcomeText, {
-				parse_mode: "Markdown",
+				parse_mode: "MarkdownV2",
 				reply_markup: {
 					inline_keyboard: [
 						[
@@ -159,7 +160,7 @@ export function registerChatMemberHandler(
 			);
 
 			await ctx.reply(buildRuleText(config.rule, RULE_ACK_WAIT_SECONDS), {
-				parse_mode: "Markdown",
+				parse_mode: "MarkdownV2",
 				reply_markup: {
 					inline_keyboard: [
 						[
@@ -208,7 +209,7 @@ export function registerChatMemberHandler(
 
 			try {
 				await ctx.editMessageText(buildRuleText(config.rule, remaining), {
-					parse_mode: "Markdown",
+					parse_mode: "MarkdownV2",
 					reply_markup: {
 						inline_keyboard: [
 							[
