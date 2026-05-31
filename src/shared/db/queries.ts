@@ -3,6 +3,8 @@ import type {
 	GroupConfig,
 	KeywordRule,
 	PendingVerification,
+	Report,
+	Warning,
 } from "../../types";
 
 export async function initGroup(
@@ -408,4 +410,130 @@ export async function getExpiredVotes(db: D1Database): Promise<ActiveVote[]> {
 		.bind(now)
 		.all<ActiveVote>();
 	return result.results;
+}
+
+// ── Warnings ─────────────────────────────────────────────────────
+
+export async function addWarning(
+	db: D1Database,
+	groupId: number,
+	userId: number,
+	adminId: number,
+	reason: string,
+): Promise<void> {
+	const now = Math.floor(Date.now() / 1000);
+	await db
+		.prepare(
+			"INSERT INTO warnings (group_id, user_id, admin_id, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+		)
+		.bind(groupId, userId, adminId, reason, now)
+		.run();
+}
+
+export async function getWarningCount(
+	db: D1Database,
+	groupId: number,
+	userId: number,
+): Promise<number> {
+	const result = await db
+		.prepare(
+			"SELECT COUNT(*) as cnt FROM warnings WHERE group_id = ? AND user_id = ?",
+		)
+		.bind(groupId, userId)
+		.first<{ cnt: number }>();
+	return result?.cnt ?? 0;
+}
+
+export async function getWarnings(
+	db: D1Database,
+	groupId: number,
+	userId?: number,
+): Promise<Warning[]> {
+	if (userId !== undefined) {
+		const result = await db
+			.prepare(
+				"SELECT * FROM warnings WHERE group_id = ? AND user_id = ? ORDER BY created_at DESC",
+			)
+			.bind(groupId, userId)
+			.all<Warning>();
+		return result.results;
+	}
+	const result = await db
+		.prepare(
+			"SELECT * FROM warnings WHERE group_id = ? ORDER BY created_at DESC",
+		)
+		.bind(groupId)
+		.all<Warning>();
+	return result.results;
+}
+
+export async function getAllWarnings(db: D1Database): Promise<Warning[]> {
+	const result = await db
+		.prepare("SELECT * FROM warnings ORDER BY created_at DESC")
+		.all<Warning>();
+	return result.results;
+}
+
+// ── Reports ──────────────────────────────────────────────────────
+
+export async function addReport(
+	db: D1Database,
+	groupId: number,
+	reporterId: number,
+	reportedUserId: number,
+	reportedMessageId: number | null,
+	content: string,
+): Promise<void> {
+	const now = Math.floor(Date.now() / 1000);
+	await db
+		.prepare(
+			"INSERT INTO reports (group_id, reporter_id, reported_user_id, reported_message_id, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+		)
+		.bind(groupId, reporterId, reportedUserId, reportedMessageId, content, now)
+		.run();
+}
+
+export async function getReports(
+	db: D1Database,
+	status?: string,
+): Promise<Report[]> {
+	if (status) {
+		const result = await db
+			.prepare(
+				"SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC",
+			)
+			.bind(status)
+			.all<Report>();
+		return result.results;
+	}
+	const result = await db
+		.prepare("SELECT * FROM reports ORDER BY created_at DESC")
+		.all<Report>();
+	return result.results;
+}
+
+export async function getReport(
+	db: D1Database,
+	reportId: number,
+): Promise<Report | null> {
+	const result = await db
+		.prepare("SELECT * FROM reports WHERE id = ?")
+		.bind(reportId)
+		.first<Report>();
+	return result ?? null;
+}
+
+export async function updateReportStatus(
+	db: D1Database,
+	reportId: number,
+	status: string,
+	reviewedBy: number,
+): Promise<void> {
+	const now = Math.floor(Date.now() / 1000);
+	await db
+		.prepare(
+			"UPDATE reports SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?",
+		)
+		.bind(status, reviewedBy, now, reportId)
+		.run();
 }

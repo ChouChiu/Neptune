@@ -34,6 +34,12 @@ const HELP_TEXT = `📋 命令列表
 /disablevotekick - 禁用投票踢人
 /kick - 回复目标用户消息发起踢人投票
 
+🔹 警告与举报
+/warn [原因] - 警告用户（回复目标消息）
+/report <内容> - 举报用户（回复目标消息）
+
+🌐 后台管理: 访问 /admin 查看和处理举报及警告
+
 💡 占位符: {nickname} {userid} {groupname}`;
 
 export function registerHelpCommand(bot: Bot): void {

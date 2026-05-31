@@ -1,5 +1,6 @@
 import { webhookCallback } from "grammy";
 import { createBot } from "./bot";
+import { handleAdminRoutes } from "./features/admin-panel";
 import {
 	formatReleaseMessage,
 	sendToTelegram,
@@ -58,6 +59,8 @@ export default {
 				{ command: "enablevotekick", description: "启用投票踢人" },
 				{ command: "disablevotekick", description: "禁用投票踢人" },
 				{ command: "kick", description: "发起踢人投票（回复目标消息）" },
+				{ command: "warn", description: "警告用户（回复目标消息）" },
+				{ command: "report", description: "举报用户（回复目标消息，附原因）" },
 			]);
 			return new Response(JSON.stringify(result), {
 				headers: { "Content-Type": "application/json" },
@@ -134,6 +137,14 @@ export default {
 				console.error("[Release] Handler error:", errMsg);
 				return new Response("Internal Error", { status: 500 });
 			}
+		}
+
+		// ── Admin panel ───────────────────────────────────────
+		const adminResponse = await handleAdminRoutes(request, env);
+		if (adminResponse) return adminResponse;
+
+		if (url.pathname === "/") {
+			return Response.redirect(`${url.origin}/admin`, 302);
 		}
 
 		return new Response("Neptune is running!");

@@ -6,9 +6,11 @@ import { registerHelpFeature } from "./help";
 import { registerKeywordsFeature } from "./keywords";
 import { registerMessageOrchestrator } from "./message-orchestrator";
 import { registerPingFeature } from "./ping";
+import { registerReportFeature } from "./report";
 import { registerRuleFeature } from "./rule";
 import { registerVerifyFeature } from "./verify";
 import { registerVotekickFeature } from "./votekick";
+import { registerWarnFeature } from "./warn";
 import { registerWelcomeFeature } from "./welcome";
 
 export function registerFeatures(bot: Bot, env: Env): void {
@@ -21,5 +23,7 @@ export function registerFeatures(bot: Bot, env: Env): void {
 	registerKeywordsFeature(bot, env.db);
 	registerAiChatFeature(bot, env.db, env.MIMO_API_KEY, env.aiContext);
 	registerVotekickFeature(bot, env.db);
+	registerWarnFeature(bot, env.db);
+	registerReportFeature(bot, env.db);
 	registerMessageOrchestrator(bot, env);
 }

@@ -3,6 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2026-05-30"
 
 [vars]
+BOT_USERNAME = "<YOUR_BOT_USERNAME>"
 REUSE_CAPTCHA = "true"
 RELEASE_CHANNEL_ID = "<YOUR_CHANNEL_ID>"
 

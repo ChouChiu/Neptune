@@ -1,5 +1,6 @@
 export interface Env {
 	BOT_TOKEN: string;
+	BOT_USERNAME: string;
 	MIMO_API_KEY: string;
 	REUSE_CAPTCHA?: string;
 	GITHUB_WEBHOOK_SECRET: string;
@@ -75,4 +76,26 @@ export interface AiChatUsage {
 	group_id: number;
 	date: string;
 	count: number;
+}
+
+export interface Warning {
+	id: number;
+	group_id: number;
+	user_id: number;
+	admin_id: number;
+	reason: string;
+	created_at: number;
+}
+
+export interface Report {
+	id: number;
+	group_id: number;
+	reporter_id: number;
+	reported_user_id: number;
+	reported_message_id: number | null;
+	content: string;
+	status: "pending" | "approved" | "dismissed";
+	reviewed_by: number | null;
+	reviewed_at: number | null;
+	created_at: number;
 }
