@@ -98,27 +98,41 @@ export function registerKeywordCommands(bot: Bot, db: D1Database): void {
 	});
 
 	bot.command("listkeywords", async (ctx) => {
-		// 检查管理员权限
-		const { allowed, groupId } = await checkAdminPermission(db, ctx);
-		if (!allowed || !groupId) {
-			await ctx.reply("只有管理员才能使用此命令。", replyOptions(ctx));
-			return;
-		}
+		try {
+			const { allowed, groupId } = await checkAdminPermission(db, ctx);
+			if (!allowed || !groupId) {
+				await ctx.reply("只有管理员才能使用此命令。", replyOptions(ctx));
+				return;
+			}
 
-		const keywords = await getKeywords(db, groupId);
-		if (keywords.length === 0) {
-			await ctx.reply("暂无关键词规则。", replyOptions(ctx));
-			return;
-		}
+			const keywords = await getKeywords(db, groupId);
+			if (keywords.length === 0) {
+				await ctx.reply("暂无关键词规则。", replyOptions(ctx));
+				return;
+			}
 
-		const lines = keywords.map(
-			(k, i) =>
-				`${i + 1}. ${k.is_regex ? "🔍" : "🔤"} ${escapeMarkdown(k.pattern)} → ${escapeMarkdown(k.reply_content)}`,
-		);
-		await ctx.reply(
-			`📋 *关键词规则*\n\n${lines.join("\n")}`,
-			replyOptionsWithParse(ctx),
-		);
+			const lines = keywords.map(
+				(k, i) =>
+					`${i + 1}. ${k.is_regex ? "🔍" : "🔤"} ${escapeMarkdown(k.pattern)} → ${escapeMarkdown(k.reply_content)}`,
+			);
+			const text = `📋 *关键词规则*\n\n${lines.join("\n")}`;
+			try {
+				await ctx.reply(text, replyOptionsWithParse(ctx));
+			} catch {
+				// Markdown 解析失败时 fallback 到纯文本
+				const plainLines = keywords.map(
+					(k, i) =>
+						`${i + 1}. ${k.is_regex ? "🔍" : "🔤"} ${k.pattern} → ${k.reply_content}`,
+				);
+				await ctx.reply(
+					`📋 关键词规则\n\n${plainLines.join("\n")}`,
+					replyOptions(ctx),
+				);
+			}
+		} catch (e) {
+			console.error("listkeywords error:", e);
+			await ctx.reply("获取关键词列表失败，请稍后重试。", replyOptions(ctx));
+		}
 	});
 
 	bot.command("removekeyword", async (ctx) => {
