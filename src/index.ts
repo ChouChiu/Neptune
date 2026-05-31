@@ -9,12 +9,16 @@ import {
 import type { Env } from "./types";
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(
+		request: Request,
+		env: Env,
+		ctx: ExecutionContext,
+	): Promise<Response> {
 		const url = new URL(request.url);
 
 		if (url.pathname === "/webhook" && request.method === "POST") {
 			try {
-				const bot = createBot(env);
+				const bot = createBot(env, ctx);
 				const handleUpdate = webhookCallback(bot, "std/http");
 				return await handleUpdate(request);
 			} catch (error) {

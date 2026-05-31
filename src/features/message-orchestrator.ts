@@ -4,7 +4,11 @@ import { handleAiChat } from "./ai-chat/handlers";
 import { handleKeywordMatch } from "./keywords/handlers";
 import { handleCaptchaReply } from "./verify/captcha-handler";
 
-export function registerMessageOrchestrator(bot: Bot, env: Env): void {
+export function registerMessageOrchestrator(
+	bot: Bot,
+	env: Env,
+	executionCtx?: ExecutionContext,
+): void {
 	bot.on("message", async (ctx) => {
 		if (!ctx.message || !ctx.from) return;
 
@@ -13,7 +17,16 @@ export function registerMessageOrchestrator(bot: Bot, env: Env): void {
 		}
 
 		if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
-			if (await handleAiChat(ctx, bot, env.db, env.MIMO_API_KEY, env.aiContext))
+			if (
+				await handleAiChat(
+					ctx,
+					bot,
+					env.db,
+					env.MIMO_API_KEY,
+					env.aiContext,
+					executionCtx,
+				)
+			)
 				return;
 			await handleKeywordMatch(ctx, env.db);
 		}
