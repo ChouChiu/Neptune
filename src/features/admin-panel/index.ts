@@ -1,6 +1,6 @@
 import type { Env } from "../../types";
 import { signSession, verifySession, verifyTelegramAuth } from "./auth";
-import { renderAdminHtml } from "./html";
+import { renderAdminHtml } from "./html/index";
 import { reportsModule } from "./modules/reports";
 import { warningsModule } from "./modules/warnings";
 import type { AdminPanelModule } from "./types";

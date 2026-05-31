@@ -43,12 +43,15 @@ export function registerReportCommand(bot: Bot, db: D1Database): void {
 			return;
 		}
 
+		const reportedText = replyMsg.text || replyMsg.caption || "";
+
 		await addReport(
 			db,
 			ctx.chat.id,
 			from.id,
 			targetUser.id,
 			replyMsg.message_id,
+			reportedText,
 			content,
 		);
 

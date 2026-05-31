@@ -2,12 +2,17 @@
 
 感谢你对 Neptune 项目的关注！我们欢迎任何形式的贡献。
 
+> **开发模式：Feature-Driven（功能驱动开发）**
+> 
+> 本项目采用 Feature-Driven 架构，每个功能作为独立模块存在于 `src/features/` 下，包含自身的命令、事件处理和注册逻辑。新增功能时请遵循此模式。
+
 ## 目录
 
 - [行为准则](#行为准则)
 - [如何贡献](#如何贡献)
 - [开发环境](#开发环境)
 - [项目架构](#项目架构)
+- [功能驱动开发](#功能驱动开发)
 - [开发指南](#开发指南)
 - [代码规范](#代码规范)
 - [提交规范](#提交规范)
@@ -85,7 +90,10 @@ bunx wrangler d1 execute neptune --remote --file=migrations/003_ai_chat_usage.sq
 bunx wrangler d1 execute neptune --remote --file=migrations/004_rule.sql
 bunx wrangler d1 execute neptune --remote --file=migrations/005_captcha_attempts.sql
 bunx wrangler d1 execute neptune --remote --file=migrations/006_indexes.sql
+bunx wrangler d1 execute neptune --remote --file=migrations/007_report_message_text.sql
 ```
+
+> 注意：`schema.sql` 已包含所有表的最新定义，新部署直接用 `schema.sql` 即可。迁移文件仅用于已有数据库的增量更新。
 
 ### 配置 Secrets
 
@@ -112,10 +120,10 @@ bun run typecheck     # TypeScript 类型检查
 
 ```
 src/
-├── index.ts              # Workers 入口：路由 /webhook, /set-webhook, /test, /github-webhook
+├── index.ts              # Workers 入口：路由 /webhook, /set-webhook, /test, /github-webhook, /admin
 ├── bot.ts                # createBot(env) —— 调用 registerFeatures()
 ├── types.ts              # Env 接口 + 数据模型定义
-├── features/             # 按功能模块组织
+├── features/             # 按功能模块组织（Feature-Driven）
 │   ├── index.ts          # registerFeatures() 统一注册所有功能
 │   ├── message-orchestrator.ts  # 消息分发：DM→验证码, 群组→AI→关键词
 │   ├── admin/            # /id, /connect, /switch
@@ -127,6 +135,9 @@ src/
 │   ├── keywords/         # /addkeyword, 关键词匹配处理
 │   ├── ai-chat/          # AI 聊天（MiMo API, skills, 上下文管理）
 │   ├── votekick/         # /kick, 投票回调处理
+│   ├── report/           # /report 群成员举报
+│   ├── warn/             # /warn 管理员警告
+│   ├── admin-panel/      # Web 管理面板（认证、举报审核、警告管理）
 │   └── github-release/   # GitHub webhook → Telegram
 ├── shared/               # 跨功能共享代码
 │   ├── db/               # schema.sql + queries.ts（唯一 DB 访问入口）
@@ -152,10 +163,36 @@ src/
 | `active_votes` | 进行中的投票踢人 |
 | `vote_records` | 投票记录 |
 | `ai_chat_usage` | AI 聊天每日用量统计 |
+| `warnings` | 用户警告记录（管理员 `/warn` 或举报通过时生成） |
+| `reports` | 举报记录（群成员 `/report` 提交，管理员 Web 面板审核） |
+
+## 功能驱动开发
+
+本项目采用 **Feature-Driven Development（FDD）** 架构模式。核心原则：
+
+1. **功能即目录** — 每个功能是 `src/features/` 下的独立目录，包含该功能的所有逻辑
+2. **自包含** — 命令、事件处理、内部工具均封装在功能目录内
+3. **统一注册** — 每个功能通过 `index.ts` 导出 `registerXxxFeature()`，由 `src/features/index.ts` 统一调用
+4. **共享下沉** — 跨功能复用的代码（DB 访问、工具函数）放在 `src/shared/`
+
+### 新增功能清单
+
+当新增一个功能时，需要完成以下步骤：
+
+1. 创建 `src/features/<feature-name>/` 目录
+2. 编写 `commands.ts`（斜杠命令）和/或 `handlers.ts`（事件/回调）
+3. 编写 `index.ts` 导出注册函数
+4. 在 `src/features/index.ts` 中调用注册函数
+5. 在 `src/index.ts` 的 `setMyCommands` 中添加命令描述
+6. 如需新表，在 `src/shared/db/schema.sql` 中添加，并在 `migrations/` 创建迁移文件
+7. 在 `src/shared/db/queries.ts` 中添加查询函数
+8. 更新 README 命令列表
 
 ## 开发指南
 
 ### 添加新命令
+
+按照 [功能驱动开发](#功能驱动开发) 清单操作。基本步骤：
 
 1. 在 `src/features/` 下对应功能文件夹中创建或编辑 `commands.ts`：
 
@@ -217,6 +254,27 @@ bunx wrangler d1 execute neptune --remote --file=migrations/NNN_description.sql
 ```
 
 > 注意：没有自动迁移机制，所有迁移必须手动执行。
+
+### Web 管理面板
+
+管理面板位于 `src/features/admin-panel/`，采用模块化设计：
+
+```
+admin-panel/
+├── index.ts          # 路由入口（/admin, /admin/auth/*）
+├── auth.ts           # Telegram Login Widget 认证（签名/验证 session）
+├── types.ts          # AdminPanelModule 接口定义
+├── html/             # 前端 HTML（layout、样式、脚本）
+└── modules/          # 功能模块
+    ├── reports.ts    # 举报管理 API（/admin/api/reports）
+    └── warnings.ts   # 警告管理 API（admin/api/warnings）
+```
+
+**添加新的管理面板模块：**
+
+1. 在 `src/features/admin-panel/modules/` 下创建模块文件
+2. 实现 `AdminPanelModule` 接口（`id`, `label`, `icon`, `apiPrefix`, `registerRoutes`）
+3. 在 `src/features/admin-panel/index.ts` 的 `modules` 数组中注册
 
 ### AI 聊天功能
 
@@ -284,9 +342,10 @@ docs: 更新 README 命令列表
 - 一个 PR 只做一件事，保持精简
 - 确保 `bun run lint` 和 `bun run typecheck` 通过
 - 如涉及新功能，请在 PR 描述中说明使用方式
-- 如涉及数据库变更，请在 `migrations/` 中添加迁移文件
+- 如涉及数据库变更，请在 `migrations/` 中添加迁移文件，并同步更新 `schema.sql`
 - 如涉及新命令，请同步更新 README 的命令列表和 `src/index.ts` 中的 `setMyCommands`
 - 如涉及新 bot 消息类型，请检查 `shouldTriggerAi()` 的系统消息关键词列表是否需要更新（`src/features/ai-chat/ai-chat.ts`）
+- 如涉及管理面板新模块，请参考 [Web 管理面板](#web-管理面板) 章节
 
 ## License
 

@@ -42,14 +42,17 @@ Optional env vars: `REUSE_CAPTCHA` (`"true"` to enable captcha reuse up to 10 ti
 
 - Schema: `src/shared/db/schema.sql` — apply with `wrangler d1 execute neptune --remote --file=src/shared/db/schema.sql`
 - Queries: `src/shared/db/queries.ts` — all DB access goes through this file
-- Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`
+- Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`, `warnings`, `reports`
 - Migrations in `migrations/` — apply manually with `wrangler d1 execute <name> --remote --file=migrations/<file>.sql` (no auto-migration on deploy)
+- `schema.sql` must be updated alongside any migration file — fresh deploys use `schema.sql` only
 
 ## Architecture
 
+**Feature-Driven Development**: each feature is a self-contained directory under `src/features/` with its own commands, handlers, and registration. Shared code goes in `src/shared/`.
+
 ```
 src/
-├── index.ts              # Workers fetch handler: /webhook, /set-webhook, /test, /github-webhook
+├── index.ts              # Workers fetch handler: /webhook, /set-webhook, /test, /github-webhook, /admin
 ├── bot.ts                # createBot(env) — calls registerFeatures()
 ├── types.ts              # Env interface + data models
 ├── features/
@@ -64,6 +67,9 @@ src/
 │   ├── keywords/         # /addkeyword, keyword matching handler
 │   ├── ai-chat/          # AI chat (MiMo API, skills, context)
 │   ├── votekick/         # /kick, vote callback handler
+│   ├── report/           # /report — group members report messages
+│   ├── warn/             # /warn — admins warn users
+│   ├── admin-panel/      # Web admin panel (/admin) with modular API
 │   └── github-release/   # GitHub webhook → Telegram
 ├── shared/
 │   ├── db/               # schema.sql + queries.ts
@@ -78,6 +84,24 @@ Each feature folder contains:
 - `handlers.ts` — event/callback handlers
 - `index.ts` — registers the feature (`registerXxxFeature(bot, db, ...)`)
 - Internal utils (e.g. `vote.ts`, `skills.ts`) when feature-specific
+
+### Adding a new feature
+
+1. Create `src/features/<name>/` with `commands.ts`, `handlers.ts` (if needed), `index.ts`
+2. Export `registerXxxFeature(bot, db, ...)` from `index.ts`
+3. Call it in `src/features/index.ts`
+4. Add command to `setMyCommands` in `src/index.ts`
+5. If new DB table: add to `schema.sql`, create migration in `migrations/`, add queries in `queries.ts`
+6. Update README command list
+
+### Admin panel modules
+
+`src/features/admin-panel/` uses a modular pattern. Each module implements `AdminPanelModule` interface:
+- `id`, `label`, `icon` — identity
+- `apiPrefix` — route prefix (e.g. `/admin/api/reports`)
+- `registerRoutes(routes, getEnv)` — registers API handlers
+
+Add new modules in `src/features/admin-panel/modules/` and register in `index.ts`'s `modules` array.
 
 ## AI chat feature
 

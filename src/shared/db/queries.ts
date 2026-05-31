@@ -482,14 +482,23 @@ export async function addReport(
 	reporterId: number,
 	reportedUserId: number,
 	reportedMessageId: number | null,
+	reportedMessageText: string,
 	content: string,
 ): Promise<void> {
 	const now = Math.floor(Date.now() / 1000);
 	await db
 		.prepare(
-			"INSERT INTO reports (group_id, reporter_id, reported_user_id, reported_message_id, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+			"INSERT INTO reports (group_id, reporter_id, reported_user_id, reported_message_id, reported_message_text, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
 		)
-		.bind(groupId, reporterId, reportedUserId, reportedMessageId, content, now)
+		.bind(
+			groupId,
+			reporterId,
+			reportedUserId,
+			reportedMessageId,
+			reportedMessageText,
+			content,
+			now,
+		)
 		.run();
 }
 

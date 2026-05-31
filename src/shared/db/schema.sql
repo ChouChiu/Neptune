@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS reports (
   reporter_id INTEGER NOT NULL,
   reported_user_id INTEGER NOT NULL,
   reported_message_id INTEGER,
+  reported_message_text TEXT DEFAULT '',
   content TEXT NOT NULL,
   status TEXT DEFAULT 'pending',
   reviewed_by INTEGER,

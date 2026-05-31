@@ -93,6 +93,7 @@ export interface Report {
 	reporter_id: number;
 	reported_user_id: number;
 	reported_message_id: number | null;
+	reported_message_text: string;
 	content: string;
 	status: "pending" | "approved" | "dismissed";
 	reviewed_by: number | null;
