@@ -5,7 +5,7 @@ import {
 	updateReportStatus,
 } from "../../../shared/db/queries";
 import type { Env } from "../../../types";
-import { verifySession } from "../auth";
+import { authenticate, unauthorized } from "../auth-helpers";
 import type { AdminPanelModule } from "../types";
 
 export const reportsModule: AdminPanelModule = {
@@ -13,9 +13,8 @@ export const reportsModule: AdminPanelModule = {
 	label: "举报管理",
 	icon: "✉️",
 	apiPrefix: "/admin/api/reports",
-	registerRoutes(routes, getEnv) {
-		routes.set("/admin/api/reports", async (req) => {
-			const env = getEnv();
+	registerRoutes(routes) {
+		routes.set("/admin/api/reports", async (req, env) => {
 			const userId = await authenticate(req, env);
 			if (!userId) return unauthorized();
 
@@ -25,8 +24,7 @@ export const reportsModule: AdminPanelModule = {
 			return Response.json({ reports });
 		});
 
-		routes.set("/admin/api/reports/:id/resolve", async (req) => {
-			const env = getEnv();
+		routes.set("/admin/api/reports/:id/resolve", async (req, env) => {
 			const userId = await authenticate(req, env);
 			if (!userId) return unauthorized();
 
@@ -154,25 +152,7 @@ async function tgApi(
 	return res.json();
 }
 
-async function authenticate(req: Request, env: Env): Promise<number | null> {
-	const cookie = parseCookie(req.headers.get("Cookie") ?? "", "nep_session");
-	if (!cookie) return null;
-	return verifySession(env.BOT_TOKEN, cookie);
-}
-
-function unauthorized(): Response {
-	return Response.json({ error: "Unauthorized" }, { status: 401 });
-}
-
 function truncate(s: string, max: number): string {
 	if (s.length <= max) return s;
 	return `${s.slice(0, max)}…`;
-}
-
-function parseCookie(header: string, name: string): string | null {
-	for (const part of header.split(";")) {
-		const [key, ...vals] = part.trim().split("=");
-		if (key === name) return vals.join("=");
-	}
-	return null;
 }

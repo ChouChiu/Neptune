@@ -138,7 +138,9 @@ async function processAiChat(job: AiChatJob): Promise<void> {
 		let memberCount: number | undefined;
 		try {
 			memberCount = await bot.api.getChatMemberCount(groupId);
-		} catch {}
+		} catch (error) {
+			console.error("Failed to get chat member count:", error);
+		}
 
 		const reply = await getChatResponse(
 			db,

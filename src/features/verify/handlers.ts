@@ -110,7 +110,7 @@ export function registerVerifyHandlers(
 			return;
 		}
 
-		await sendCaptcha(
+		const sent = await sendCaptcha(
 			ctx.api,
 			db,
 			bucket,
@@ -120,6 +120,12 @@ export function registerVerifyHandlers(
 			reuseCaptcha,
 			welcomeMsgId,
 		);
+		if (!sent) {
+			await ctx.reply(
+				"无法发送验证码，请先私聊机器人并点击「开始」，然后重新加入群组。",
+				replyOptions(ctx),
+			);
+		}
 	});
 
 	bot.callbackQuery(/^rule_ack:(-?\d+):(\d+)$/, async (ctx) => {
@@ -156,7 +162,9 @@ export function registerVerifyHandlers(
 						],
 					},
 				});
-			} catch {}
+			} catch (error) {
+				console.error("Failed to edit rule ack message:", error);
+			}
 
 			await ctx.answerCallbackQuery({
 				text: `还需等待 ${remaining} 秒`,
@@ -173,9 +181,11 @@ export function registerVerifyHandlers(
 			await ctx.editMessageReplyMarkup({
 				reply_markup: { inline_keyboard: [] },
 			});
-		} catch {}
+		} catch (error) {
+			console.error("Failed to remove rule ack button:", error);
+		}
 
-		await sendCaptcha(
+		const sent = await sendCaptcha(
 			ctx.api,
 			db,
 			bucket,
@@ -185,6 +195,12 @@ export function registerVerifyHandlers(
 			reuseCaptcha,
 			welcomeMsgId,
 		);
+		if (!sent) {
+			await ctx.reply(
+				"无法发送验证码，请先私聊机器人并点击「开始」，然后重新加入群组。",
+				replyOptions(ctx),
+			);
+		}
 	});
 }
 
@@ -197,7 +213,7 @@ async function sendCaptcha(
 	config: { verify_timeout: number },
 	reuseCaptcha: boolean,
 	welcomeMsgId?: number,
-): Promise<void> {
+): Promise<boolean> {
 	const { generateCaptcha, uploadCaptchaToR2 } = await import(
 		"../../shared/utils/captcha"
 	);
@@ -207,14 +223,6 @@ async function sendCaptcha(
 
 	const timeout = config.verify_timeout;
 	const expiresAt = Math.floor(Date.now() / 1000) + timeout;
-	await addPendingVerification(
-		db,
-		userId,
-		groupId,
-		captcha.text,
-		expiresAt,
-		welcomeMsgId,
-	);
 
 	try {
 		await api.sendPhoto(userId, new InputFile(captcha.bmp, "captcha.bmp"), {
@@ -225,5 +233,16 @@ async function sendCaptcha(
 			"Failed to send captcha:",
 			error instanceof Error ? error.message : error,
 		);
+		return false;
 	}
+
+	await addPendingVerification(
+		db,
+		userId,
+		groupId,
+		captcha.text,
+		expiresAt,
+		welcomeMsgId,
+	);
+	return true;
 }

@@ -67,7 +67,9 @@ function matchKeyword(
 					if (regex2.test(lowerText) || regex2.test(simplifiedText))
 						return rule;
 				}
-			} catch {}
+			} catch (error) {
+				console.error("Failed to compile simplified regex:", error);
+			}
 		} else {
 			if (simplifiedText.includes(sify(rule.pattern).toLowerCase())) {
 				return rule;

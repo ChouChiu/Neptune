@@ -1,3 +1,12 @@
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let result = 0;
+	for (let i = 0; i < a.length; i++) {
+		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return result === 0;
+}
+
 export async function verifyTelegramAuth(
 	botToken: string,
 	data: Record<string, string>,
@@ -41,7 +50,7 @@ export async function verifyTelegramAuth(
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
 
-	return computedHash === hash;
+	return timingSafeEqual(computedHash, hash);
 }
 
 export async function signSession(
@@ -100,6 +109,6 @@ export async function verifySession(
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("");
 
-	if (sig !== parts[2]) return null;
+	if (!timingSafeEqual(sig, parts[2] ?? "")) return null;
 	return userId;
 }

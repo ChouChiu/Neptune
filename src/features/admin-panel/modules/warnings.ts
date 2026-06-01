@@ -1,6 +1,5 @@
 import { getAllWarnings } from "../../../shared/db/queries";
-import type { Env } from "../../../types";
-import { verifySession } from "../auth";
+import { authenticate, unauthorized } from "../auth-helpers";
 import type { AdminPanelModule } from "../types";
 
 export const warningsModule: AdminPanelModule = {
@@ -8,9 +7,8 @@ export const warningsModule: AdminPanelModule = {
 	label: "警告记录",
 	icon: "⚠️",
 	apiPrefix: "/admin/api/warnings",
-	registerRoutes(routes, getEnv) {
-		routes.set("/admin/api/warnings", async (req) => {
-			const env = getEnv();
+	registerRoutes(routes) {
+		routes.set("/admin/api/warnings", async (req, env) => {
 			const userId = await authenticate(req, env);
 			if (!userId) return unauthorized();
 
@@ -19,21 +17,3 @@ export const warningsModule: AdminPanelModule = {
 		});
 	},
 };
-
-async function authenticate(req: Request, env: Env): Promise<number | null> {
-	const cookie = parseCookie(req.headers.get("Cookie") ?? "", "nep_session");
-	if (!cookie) return null;
-	return verifySession(env.BOT_TOKEN, cookie);
-}
-
-function unauthorized(): Response {
-	return Response.json({ error: "Unauthorized" }, { status: 401 });
-}
-
-function parseCookie(header: string, name: string): string | null {
-	for (const part of header.split(";")) {
-		const [key, ...vals] = part.trim().split("=");
-		if (key === name) return vals.join("=");
-	}
-	return null;
-}

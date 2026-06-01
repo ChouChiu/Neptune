@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS pending_verifications (
   captcha_text TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   welcome_message_id INTEGER,
+  attempts INTEGER DEFAULT 0,
   PRIMARY KEY (user_id, group_id)
 );
 

@@ -1,5 +1,6 @@
 import type { Env } from "../../types";
 import { signSession, verifySession, verifyTelegramAuth } from "./auth";
+import { parseCookie } from "./auth-helpers";
 import { renderAdminHtml } from "./html/index";
 import { reportsModule } from "./modules/reports";
 import { warningsModule } from "./modules/warnings";
@@ -15,24 +16,13 @@ const apiRoutes = new Map<
 >();
 
 let routesInitialized = false;
-let currentEnv: Env;
 
 function initRoutes(): void {
 	if (routesInitialized) return;
-	const getEnv = () => currentEnv;
 	for (const mod of modules) {
-		mod.registerRoutes(apiRoutes, getEnv);
+		mod.registerRoutes(apiRoutes);
 	}
 	routesInitialized = true;
-}
-
-function parseCookies(header: string): Record<string, string> {
-	const cookies: Record<string, string> = {};
-	for (const part of header.split(";")) {
-		const [key, ...vals] = part.trim().split("=");
-		if (key) cookies[key] = vals.join("=");
-	}
-	return cookies;
 }
 
 export async function handleAdminRoutes(
@@ -42,7 +32,6 @@ export async function handleAdminRoutes(
 	const url = new URL(request.url);
 	if (!url.pathname.startsWith("/admin")) return null;
 
-	currentEnv = env;
 	initRoutes();
 
 	// ── Serve admin HTML ──────────────────────────────────────
@@ -91,7 +80,7 @@ export async function handleAdminRoutes(
 			return new Response(JSON.stringify({ ok: true, user }), {
 				headers: {
 					"Content-Type": "application/json",
-					"Set-Cookie": `nep_session=${session}; Path=/; Max-Age=${SESSION_TTL}; SameSite=Lax`,
+					"Set-Cookie": `nep_session=${session}; Path=/; Max-Age=${SESSION_TTL}; HttpOnly; Secure; SameSite=Lax`,
 				},
 			});
 		} catch {
@@ -101,15 +90,18 @@ export async function handleAdminRoutes(
 
 	// ── Check current session ─────────────────────────────────
 	if (url.pathname === "/admin/auth/me" && request.method === "GET") {
-		const cookies = parseCookies(request.headers.get("Cookie") ?? "");
-		const session = cookies.nep_session;
+		const session = parseCookie(
+			request.headers.get("Cookie") ?? "",
+			"nep_session",
+		);
 		if (!session) return Response.json({ user: null });
 
 		const userId = await verifySession(env.BOT_TOKEN, session);
 		if (!userId) {
 			return new Response(JSON.stringify({ user: null }), {
 				headers: {
-					"Set-Cookie": "nep_session=; Path=/; Max-Age=0; SameSite=Lax",
+					"Set-Cookie":
+						"nep_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
 				},
 			});
 		}
@@ -131,7 +123,6 @@ export async function handleAdminRoutes(
 			error: "Not Found",
 			path: url.pathname,
 			method: request.method,
-			routes: Array.from(apiRoutes.keys()),
 		}),
 		{ status: 404, headers: { "Content-Type": "application/json" } },
 	);

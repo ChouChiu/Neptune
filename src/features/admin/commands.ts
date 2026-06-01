@@ -18,9 +18,16 @@ export function registerAdminCommands(bot: Bot, db: D1Database): void {
 			);
 			return;
 		}
-		// 自动关联群组
+		// 自动关联群组（需验证管理员身份）
 		if (ctx.from) {
-			await connectAdmin(db, ctx.from.id, chat.id);
+			try {
+				const chatMember = await ctx.api.getChatMember(chat.id, ctx.from.id);
+				if (["administrator", "creator"].includes(chatMember.status)) {
+					await connectAdmin(db, ctx.from.id, chat.id);
+				}
+			} catch {
+				// getChatMember failed — skip auto-connect
+			}
 		}
 		await ctx.reply(`当前群组 ID: \`${chat.id}\``, replyOptionsWithParse(ctx));
 	});

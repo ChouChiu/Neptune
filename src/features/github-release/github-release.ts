@@ -125,23 +125,23 @@ export function formatReleaseMessage(release: GitHubRelease): string {
 		? `🎉 Kazumi ${tagName} for OHOS 已发布`
 		: `🎉 Kazumi ${tagName} 已发布`;
 
-	const body = release.release.body?.trim();
-	const bodyMd = body ? convertGfmToMarkdownV2(body) : "";
-
 	const releaseUrl = release.release.html_url;
 	const linkLine = markdownLink("🔗 Release 页面", releaseUrl);
+
+	const suffix = `\n\n${linkLine}`;
+	const maxBodyLength = MAX_MESSAGE_LENGTH - header.length - suffix.length - 4;
+
+	let body = release.release.body?.trim();
+	if (body && body.length > maxBodyLength) {
+		body = `${body.slice(0, maxBodyLength)}…`;
+	}
+	const bodyMd = body ? convertGfmToMarkdownV2(body) : "";
 
 	let message: string;
 	if (bodyMd) {
 		message = `${header}\n\n${bodyMd}\n\n${linkLine}`;
 	} else {
 		message = `${header}\n\n${linkLine}`;
-	}
-
-	if (message.length > MAX_MESSAGE_LENGTH) {
-		const suffix = `\n\n${linkLine}`;
-		const maxBody = MAX_MESSAGE_LENGTH - suffix.length;
-		message = message.slice(0, maxBody) + suffix;
 	}
 
 	return message;

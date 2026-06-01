@@ -21,9 +21,13 @@ export async function checkAdminPermission(
 	}
 
 	// 群组中：检查是否是 Telegram 管理员
-	const chatMember = await ctx.api.getChatMember(ctx.chat.id, userId);
-	const isAdmin = ["administrator", "creator"].includes(chatMember.status);
-	if (!isAdmin) return { allowed: false };
+	try {
+		const chatMember = await ctx.api.getChatMember(ctx.chat.id, userId);
+		const isAdmin = ["administrator", "creator"].includes(chatMember.status);
+		if (!isAdmin) return { allowed: false };
+	} catch {
+		return { allowed: false };
+	}
 
 	return { allowed: true, groupId: ctx.chat.id };
 }

@@ -48,8 +48,6 @@ export async function handleCaptchaReply(
 				}
 			}
 
-			await removePendingVerification(db, userId, groupId);
-
 			try {
 				await ctx.api.restrictChatMember(groupId, userId, {
 					can_send_messages: true,
@@ -67,6 +65,7 @@ export async function handleCaptchaReply(
 					can_pin_messages: true,
 					can_manage_topics: true,
 				});
+				await removePendingVerification(db, userId, groupId);
 				await ctx.reply(
 					"✅ 验证成功！你现在可以在群组中发言了。",
 					replyOptions(ctx),
@@ -78,21 +77,33 @@ export async function handleCaptchaReply(
 					replyOptions(ctx),
 				);
 			}
-		} else {
-			await db
-				.prepare(
-					"UPDATE pending_verifications SET attempts = attempts + 1 WHERE user_id = ? AND group_id = ?",
-				)
-				.bind(userId, groupId)
-				.run();
-			const remaining = MAX_ATTEMPTS - verification.attempts - 1;
+			return true;
+		}
+	}
+
+	if (verifications.results.length > 0) {
+		// Increment attempts for all pending verifications on mismatch
+		await db
+			.prepare(
+				"UPDATE pending_verifications SET attempts = attempts + 1 WHERE user_id = ? AND expires_at > ?",
+			)
+			.bind(userId, Math.floor(Date.now() / 1000))
+			.run();
+
+		const firstVerification = verifications.results[0];
+		if (firstVerification) {
+			const remaining = MAX_ATTEMPTS - firstVerification.attempts - 1;
 			if (remaining > 0) {
 				await ctx.reply(
 					`❌ 验证码错误，还剩 ${remaining} 次机会。`,
 					replyOptions(ctx),
 				);
 			} else {
-				await removePendingVerification(db, userId, groupId);
+				// Remove all pending verifications for this user
+				await db
+					.prepare("DELETE FROM pending_verifications WHERE user_id = ?")
+					.bind(userId)
+					.run();
 				await ctx.reply(
 					"❌ 验证失败次数过多，请重新加入群组。",
 					replyOptions(ctx),

@@ -3,7 +3,12 @@ export function renderLayout(
 	styles: string,
 	scripts: string,
 ): string {
-	const safe = botUsername.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+	const safe = botUsername
+		.replace(/&/g, "&amp;")
+		.replace(/"/g, "&quot;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/'/g, "&#39;");
 	return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>

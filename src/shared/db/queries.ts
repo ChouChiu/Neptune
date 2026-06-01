@@ -209,7 +209,7 @@ export async function addPendingVerification(
 ): Promise<void> {
 	await db
 		.prepare(
-			"INSERT OR REPLACE INTO pending_verifications (user_id, group_id, captcha_text, expires_at, welcome_message_id) VALUES (?, ?, ?, ?, ?)",
+			"INSERT INTO pending_verifications (user_id, group_id, captcha_text, expires_at, welcome_message_id, attempts) VALUES (?, ?, ?, ?, ?, 0) ON CONFLICT(user_id, group_id) DO UPDATE SET captcha_text = excluded.captcha_text, expires_at = excluded.expires_at, welcome_message_id = excluded.welcome_message_id, attempts = 0",
 		)
 		.bind(userId, groupId, captchaText, expiresAt, welcomeMessageId ?? null)
 		.run();

@@ -7,6 +7,5 @@ export interface AdminPanelModule {
 	apiPrefix: string;
 	registerRoutes(
 		routes: Map<string, (req: Request, env: Env) => Promise<Response>>,
-		getEnv: () => Env,
 	): void;
 }
