@@ -1,3 +1,4 @@
+import { currentTimestamp } from "../../shared/utils/time";
 import type { Env } from "../../types";
 import { signSession, verifySession, verifyTelegramAuth } from "./auth";
 import { parseCookie } from "./auth-helpers";
@@ -9,6 +10,7 @@ import type { AdminPanelModule } from "./types";
 const SESSION_TTL = 86400; // 24 hours
 
 const modules: AdminPanelModule[] = [reportsModule, warningsModule];
+let cachedHtml: string | null = null;
 
 const apiRoutes = new Map<
 	string,
@@ -36,7 +38,10 @@ export async function handleAdminRoutes(
 
 	// ── Serve admin HTML ──────────────────────────────────────
 	if (url.pathname === "/admin" && request.method === "GET") {
-		return new Response(renderAdminHtml(env.BOT_USERNAME), {
+		if (!cachedHtml) {
+			cachedHtml = renderAdminHtml(env.BOT_USERNAME);
+		}
+		return new Response(cachedHtml, {
 			headers: { "Content-Type": "text/html; charset=utf-8" },
 		});
 	}
@@ -67,7 +72,7 @@ export async function handleAdminRoutes(
 				});
 			}
 
-			const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL;
+			const expiresAt = currentTimestamp() + SESSION_TTL;
 			const session = await signSession(env.BOT_TOKEN, userId, expiresAt);
 
 			const user = {

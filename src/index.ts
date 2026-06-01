@@ -142,7 +142,9 @@ export default {
 				}
 
 				const text = formatReleaseMessage(payload);
-				await sendToTelegram(env.BOT_TOKEN, env.RELEASE_CHANNEL_ID, text);
+				if (env.RELEASE_CHANNEL_ID) {
+					await sendToTelegram(env.BOT_TOKEN, env.RELEASE_CHANNEL_ID, text);
+				}
 
 				return new Response("ok", { status: 200 });
 			} catch (error) {

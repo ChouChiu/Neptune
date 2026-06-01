@@ -7,9 +7,15 @@ import {
 	setVotekickEnabled,
 	updateVoteMessageId,
 } from "../../shared/db/queries";
+import {
+	requireAdmin,
+	requireGroup,
+	requireNonBot,
+	requireReplyTarget,
+} from "../../shared/utils/command-guards";
 import { getNickname } from "../../shared/utils/nickname";
-import { checkAdminPermission } from "../../shared/utils/permissions";
 import { replyOptions } from "../../shared/utils/reply";
+import { currentTimestamp } from "../../shared/utils/time";
 import { buildVoteText } from "./vote";
 
 const VOTE_DURATION = 300;
@@ -21,11 +27,8 @@ function generateVoteId(): string {
 
 export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 	bot.command("enablevotekick", async (ctx) => {
-		const { allowed, groupId } = await checkAdminPermission(db, ctx);
-		if (!allowed || !groupId) {
-			await ctx.reply("只有管理员才能使用此命令。", replyOptions(ctx));
-			return;
-		}
+		const { allowed, groupId } = await requireAdmin(db, ctx);
+		if (!allowed || !groupId) return;
 
 		const config = await getGroupConfig(db, groupId);
 		if (config?.votekick_enabled) {
@@ -41,11 +44,8 @@ export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 	});
 
 	bot.command("disablevotekick", async (ctx) => {
-		const { allowed, groupId } = await checkAdminPermission(db, ctx);
-		if (!allowed || !groupId) {
-			await ctx.reply("只有管理员才能使用此命令。", replyOptions(ctx));
-			return;
-		}
+		const { allowed, groupId } = await requireAdmin(db, ctx);
+		if (!allowed || !groupId) return;
 
 		const config = await getGroupConfig(db, groupId);
 		if (!config?.votekick_enabled) {
@@ -58,12 +58,9 @@ export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 	});
 
 	bot.command("kick", async (ctx) => {
-		if (ctx.chat.type === "private") {
-			await ctx.reply("此命令只能在群组中使用。", replyOptions(ctx));
-			return;
-		}
+		const { allowed: groupAllowed, groupId } = await requireGroup(ctx);
+		if (!groupAllowed || !groupId) return;
 
-		const groupId = ctx.chat.id;
 		const config = await getGroupConfig(db, groupId);
 		if (!config?.votekick_enabled) {
 			await ctx.reply(
@@ -76,24 +73,18 @@ export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 		const from = ctx.from;
 		if (!from) return;
 
-		const replyMsg = ctx.message?.reply_to_message;
-		if (!replyMsg?.from) {
-			await ctx.reply("请回复目标用户的消息来发起投票。", replyOptions(ctx));
-			return;
-		}
+		const { allowed: replyAllowed, target } = requireReplyTarget(ctx);
+		if (!replyAllowed || !target) return;
 
-		const targetId = replyMsg.from.id;
-		const targetName = getNickname(replyMsg.from);
+		const targetId = target.id;
+		const targetName = getNickname(target);
 
 		if (targetId === from.id) {
 			await ctx.reply("❌ 不能对自己发起投票。", replyOptions(ctx));
 			return;
 		}
 
-		if (replyMsg.from.is_bot) {
-			await ctx.reply("❌ 不能对机器人发起投票。", replyOptions(ctx));
-			return;
-		}
+		if (!(await requireNonBot(ctx, target))) return;
 
 		try {
 			const member = await ctx.api.getChatMember(groupId, targetId);
@@ -109,7 +100,7 @@ export function registerVotekickCommands(bot: Bot, db: D1Database): void {
 			return;
 		}
 
-		const now = Math.floor(Date.now() / 1000);
+		const now = currentTimestamp();
 		const lastVote = await getLastVoteByInitiator(db, groupId, from.id);
 		if (lastVote) {
 			const elapsed = now - lastVote.created_at;

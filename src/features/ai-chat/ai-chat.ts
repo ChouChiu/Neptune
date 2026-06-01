@@ -1,4 +1,5 @@
 import type { Context } from "grammy";
+import { acquireLock, releaseLock } from "../../shared/db/queries";
 import type { AiContextMessage } from "../../types";
 import { DEFAULT_SKILL, matchSkills, skillToText } from "./skills";
 import systemPromptData from "./system-prompt.json";
@@ -127,7 +128,7 @@ export async function updateAiContext(
 	await kv.put(key, JSON.stringify(trimmed), { expirationTtl: KV_TTL });
 }
 
-export async function getAiUsageCount(
+export async function incrementAiUsage(
 	db: D1Database,
 	userId: number,
 	groupId: number,
@@ -135,28 +136,15 @@ export async function getAiUsageCount(
 ): Promise<number> {
 	const result = await db
 		.prepare(
-			"SELECT count FROM ai_chat_usage WHERE user_id = ? AND group_id = ? AND date = ?",
-		)
-		.bind(userId, groupId, date)
-		.first<{ count: number }>();
-	return result?.count ?? 0;
-}
-
-export async function incrementAiUsage(
-	db: D1Database,
-	userId: number,
-	groupId: number,
-	date: string,
-): Promise<void> {
-	await db
-		.prepare(
 			`INSERT INTO ai_chat_usage (user_id, group_id, date, count)
 			VALUES (?, ?, ?, 1)
 			ON CONFLICT(user_id, group_id, date)
-			DO UPDATE SET count = count + 1`,
+			DO UPDATE SET count = count + 1
+			RETURNING count`,
 		)
 		.bind(userId, groupId, date)
-		.run();
+		.first<{ count: number }>();
+	return result?.count ?? 1;
 }
 
 export async function callMimoApi(
@@ -247,64 +235,76 @@ export async function getChatResponse(
 	groupContext?: { title?: string; memberCount?: number },
 ): Promise<string> {
 	const today = getTodayDate();
-	const usage = await getAiUsageCount(db, userId, groupId, today);
 
-	if (!isAdmin && usage >= DAILY_LIMIT) {
-		return "涅普涅普~今天的主角光环能量用完啦！明天再来找涅普玩吧~♪（每日限额15次）";
+	let currentUsage = 0;
+	if (!isAdmin) {
+		currentUsage = await incrementAiUsage(db, userId, groupId, today);
+		if (currentUsage > DAILY_LIMIT) {
+			return "涅普涅普~今天的主角光环能量用完啦！明天再来找涅普玩吧~♪（每日限额15次）";
+		}
 	}
 
-	const context = await getAiContext(kv, groupId);
-
-	context.push({
-		role: "user",
-		content: userMessage,
-		userId,
-		timestamp: Date.now(),
-	});
-
-	const trimmedContext =
-		context.length > MAX_CONTEXT_MESSAGES
-			? context.slice(-MAX_CONTEXT_MESSAGES)
-			: context;
-
-	const apiMessages = trimmedContext.map((msg) => ({
-		role: msg.role,
-		content: msg.content,
-	}));
-
-	const matchedSkills = matchSkills(userMessage);
-	let systemPrompt = `${SYSTEM_PROMPT}\n${skillToText(DEFAULT_SKILL)}`;
-	if (matchedSkills.length > 0) {
-		systemPrompt += `\n${matchedSkills.map((s) => skillToText(s)).join("\n")}`;
-	}
-	if (groupContext) {
-		systemPrompt += `\n\n[当前群组信息]\n群组名称：${groupContext.title ?? "未知群组"}\n群组ID：${groupId}${groupContext.memberCount ? `\n成员数：${groupContext.memberCount}` : ""}\n\n请根据群组氛围自然地回应，可以适当提及群组相关的话题。`;
-	}
-
-	let reply: string;
-	try {
-		reply = await callMimoApi(apiKey, apiMessages, systemPrompt);
-	} catch (error) {
-		console.error("MiMo API call failed:", error);
+	const lockName = `ai-context:${groupId}`;
+	const lockTtl = 60;
+	if (!(await acquireLock(db, lockName, lockTtl))) {
 		return "涅普？！刚才好像有什么东西掉线了……主角的网络冒险失败了一次，再试一次吧！";
 	}
 
-	const MAX_REPLY_LENGTH = 2048;
-	if (reply.length > MAX_REPLY_LENGTH) {
-		reply = `${reply.substring(0, MAX_REPLY_LENGTH - 20)}……涅普！说得太多了啦~`;
+	try {
+		const context = await getAiContext(kv, groupId);
+
+		context.push({
+			role: "user",
+			content: userMessage,
+			userId,
+			timestamp: Date.now(),
+		});
+
+		const trimmedContext =
+			context.length > MAX_CONTEXT_MESSAGES
+				? context.slice(-MAX_CONTEXT_MESSAGES)
+				: context;
+
+		const apiMessages = trimmedContext.map((msg) => ({
+			role: msg.role,
+			content: msg.content,
+		}));
+
+		const matchedSkills = matchSkills(userMessage);
+		let systemPrompt = `${SYSTEM_PROMPT}\n${skillToText(DEFAULT_SKILL)}`;
+		if (matchedSkills.length > 0) {
+			systemPrompt += `\n${matchedSkills.map((s) => skillToText(s)).join("\n")}`;
+		}
+		if (groupContext) {
+			systemPrompt += `\n\n[当前群组信息]\n群组名称：${groupContext.title ?? "未知群组"}\n群组ID：${groupId}${groupContext.memberCount ? `\n成员数：${groupContext.memberCount}` : ""}\n\n请根据群组氛围自然地回应，可以适当提及群组相关的话题。`;
+		}
+
+		let reply: string;
+		try {
+			reply = await callMimoApi(apiKey, apiMessages, systemPrompt);
+		} catch (error) {
+			console.error("MiMo API call failed:", error);
+			return "涅普？！刚才好像有什么东西掉线了……主角的网络冒险失败了一次，再试一次吧！";
+		}
+
+		const MAX_REPLY_LENGTH = 2048;
+		if (reply.length > MAX_REPLY_LENGTH) {
+			reply = `${reply.substring(0, MAX_REPLY_LENGTH - 20)}……涅普！说得太多了啦~`;
+		}
+
+		context.push({
+			role: "assistant",
+			content: reply,
+			timestamp: Date.now(),
+		});
+
+		await updateAiContext(kv, groupId, context);
+
+		if (isAdmin) return reply;
+
+		const remaining = DAILY_LIMIT - currentUsage;
+		return `${reply}\n\n_剩余次数: ${remaining}/${DAILY_LIMIT}_`;
+	} finally {
+		await releaseLock(db, lockName);
 	}
-
-	context.push({
-		role: "assistant",
-		content: reply,
-		timestamp: Date.now(),
-	});
-
-	await updateAiContext(kv, groupId, context);
-	if (!isAdmin) await incrementAiUsage(db, userId, groupId, today);
-
-	if (isAdmin) return reply;
-
-	const remaining = DAILY_LIMIT - usage - 1;
-	return `${reply}\n\n_剩余次数: ${remaining}/${DAILY_LIMIT}_`;
 }

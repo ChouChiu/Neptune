@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS pending_verifications (
   expires_at INTEGER NOT NULL,
   welcome_message_id INTEGER,
   attempts INTEGER DEFAULT 0,
+  rule_ack_done INTEGER DEFAULT 0,
   PRIMARY KEY (user_id, group_id)
 );
 
@@ -85,3 +86,8 @@ CREATE TABLE IF NOT EXISTS reports (
 
 CREATE INDEX IF NOT EXISTS idx_warnings_group_user ON warnings(group_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+
+CREATE TABLE IF NOT EXISTS locks (
+  name TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);

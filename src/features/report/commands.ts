@@ -1,35 +1,22 @@
 import type { Bot } from "grammy";
 import { addReport } from "../../shared/db/queries";
+import {
+	requireGroup,
+	requireNonBot,
+	requireReplyTarget,
+} from "../../shared/utils/command-guards";
 import { escapeMarkdown } from "../../shared/utils/markdown";
 import { replyOptionsWithParse } from "../../shared/utils/reply";
 
 export function registerReportCommand(bot: Bot, db: D1Database): void {
 	bot.command("report", async (ctx) => {
-		if (ctx.chat.type === "private") {
-			await ctx.reply(
-				escapeMarkdown("此命令只能在群组中使用。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		const { allowed: groupAllowed, groupId } = await requireGroup(ctx);
+		if (!groupAllowed || !groupId) return;
 
-		const replyMsg = ctx.message?.reply_to_message;
-		if (!replyMsg?.from) {
-			await ctx.reply(
-				escapeMarkdown("请回复目标用户的消息以提交举报。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		const { allowed: replyAllowed, target } = requireReplyTarget(ctx);
+		if (!replyAllowed || !target) return;
 
-		const targetUser = replyMsg.from;
-		if (targetUser.is_bot) {
-			await ctx.reply(
-				escapeMarkdown("涅普不能举报机器人哦～"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		if (!(await requireNonBot(ctx, target))) return;
 
 		const from = ctx.from;
 		if (!from) return;
@@ -43,14 +30,17 @@ export function registerReportCommand(bot: Bot, db: D1Database): void {
 			return;
 		}
 
-		const reportedText = replyMsg.text || replyMsg.caption || "";
+		const reportedText =
+			ctx.message?.reply_to_message?.text ||
+			ctx.message?.reply_to_message?.caption ||
+			"";
 
 		await addReport(
 			db,
-			ctx.chat.id,
+			groupId,
 			from.id,
-			targetUser.id,
-			replyMsg.message_id,
+			target.id,
+			ctx.message?.reply_to_message?.message_id ?? 0,
 			reportedText,
 			content,
 		);

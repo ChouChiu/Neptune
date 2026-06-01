@@ -1,52 +1,30 @@
 import type { Bot } from "grammy";
 import { addWarning, getWarningCount } from "../../shared/db/queries";
+import {
+	requireAdmin,
+	requireGroup,
+	requireNonBot,
+	requireReplyTarget,
+} from "../../shared/utils/command-guards";
 import { escapeMarkdown } from "../../shared/utils/markdown";
 import { getNickname } from "../../shared/utils/nickname";
-import { checkAdminPermission } from "../../shared/utils/permissions";
 import { replyOptionsWithParse } from "../../shared/utils/reply";
 
 export function registerWarnCommand(bot: Bot, db: D1Database): void {
 	bot.command("warn", async (ctx) => {
-		if (ctx.chat.type === "private") {
-			await ctx.reply(
-				escapeMarkdown("此命令只能在群组中使用。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		const { allowed: groupAllowed, groupId } = await requireGroup(ctx);
+		if (!groupAllowed || !groupId) return;
 
-		const { allowed, groupId } = await checkAdminPermission(db, ctx);
-		if (!allowed || !groupId) {
-			await ctx.reply(
-				escapeMarkdown("你没有权限执行此操作。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		const { allowed, groupId: adminGroupId } = await requireAdmin(db, ctx);
+		if (!allowed || !adminGroupId) return;
 
-		const replyMsg = ctx.message?.reply_to_message;
-		if (!replyMsg?.from) {
-			await ctx.reply(
-				escapeMarkdown("请回复目标用户的消息以进行警告。"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		const { allowed: replyAllowed, target } = requireReplyTarget(ctx);
+		if (!replyAllowed || !target) return;
 
-		const targetUser = replyMsg.from;
-		if (targetUser.is_bot) {
-			await ctx.reply(
-				escapeMarkdown("涅普不能警告机器人哦～"),
-				replyOptionsWithParse(ctx),
-			);
-			return;
-		}
+		if (!(await requireNonBot(ctx, target))) return;
 
 		try {
-			const targetMember = await ctx.api.getChatMember(
-				ctx.chat.id,
-				targetUser.id,
-			);
+			const targetMember = await ctx.api.getChatMember(ctx.chat.id, target.id);
 			if (["administrator", "creator"].includes(targetMember.status)) {
 				await ctx.reply(
 					escapeMarkdown("涅普不能警告管理员哦～"),
@@ -63,10 +41,10 @@ export function registerWarnCommand(bot: Bot, db: D1Database): void {
 
 		const reason = ctx.match?.toString().trim() ?? "";
 
-		await addWarning(db, groupId, targetUser.id, from.id, reason);
+		await addWarning(db, adminGroupId, target.id, from.id, reason);
 
-		const count = await getWarningCount(db, groupId, targetUser.id);
-		const nickname = getNickname(targetUser);
+		const count = await getWarningCount(db, adminGroupId, target.id);
+		const nickname = getNickname(target);
 
 		let text: string;
 		if (reason) {

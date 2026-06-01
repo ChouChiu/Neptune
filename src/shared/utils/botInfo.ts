@@ -4,7 +4,7 @@ let cachedUsername: string | null = null;
 let inflightPromise: Promise<string> | null = null;
 
 export async function getBotUsername(api: Api): Promise<string> {
-	if (cachedUsername) return cachedUsername;
+	if (cachedUsername !== null) return cachedUsername;
 	if (inflightPromise) return inflightPromise;
 
 	inflightPromise = api

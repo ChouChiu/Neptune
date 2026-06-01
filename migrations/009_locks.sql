@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS locks (
+  name TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL
+);

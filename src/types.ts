@@ -4,7 +4,7 @@ export interface Env {
 	MIMO_API_KEY: string;
 	REUSE_CAPTCHA?: string;
 	GITHUB_WEBHOOK_SECRET: string;
-	RELEASE_CHANNEL_ID: string;
+	RELEASE_CHANNEL_ID?: string;
 	db: D1Database;
 	captcha: R2Bucket;
 	aiContext: KVNamespace;
@@ -26,7 +26,7 @@ export interface KeywordRule {
 	pattern: string;
 	is_regex: number;
 	reply_content: string;
-	reply_type: string;
+	reply_type: "text" | "markdown";
 }
 
 export interface AdminConnection {
@@ -46,6 +46,7 @@ export interface PendingVerification {
 	expires_at: number;
 	welcome_message_id: number | null;
 	attempts: number;
+	rule_ack_done: number;
 }
 
 export interface ActiveVote {

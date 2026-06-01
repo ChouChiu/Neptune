@@ -20,7 +20,7 @@ export const reportsModule: AdminPanelModule = {
 
 			const url = new URL(req.url);
 			const status = url.searchParams.get("status") ?? undefined;
-			const reports = await getReports(env.db, status);
+			const reports = await getReports(env.db, status, userId);
 			return Response.json({ reports });
 		});
 
@@ -43,7 +43,7 @@ export const reportsModule: AdminPanelModule = {
 				);
 			}
 
-			const report = await getReport(env.db, reportId);
+			const report = await getReport(env.db, reportId, userId);
 			if (!report) {
 				return Response.json({ error: "Report not found" }, { status: 404 });
 			}

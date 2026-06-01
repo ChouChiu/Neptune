@@ -6,6 +6,7 @@ import type {
 	Report,
 	Warning,
 } from "../../types";
+import { currentTimestamp } from "../utils/time";
 
 export async function initGroup(
 	db: D1Database,
@@ -206,12 +207,33 @@ export async function addPendingVerification(
 	captchaText: string,
 	expiresAt: number,
 	welcomeMessageId?: number,
+	ruleAckDone: boolean = false,
 ): Promise<void> {
 	await db
 		.prepare(
-			"INSERT INTO pending_verifications (user_id, group_id, captcha_text, expires_at, welcome_message_id, attempts) VALUES (?, ?, ?, ?, ?, 0) ON CONFLICT(user_id, group_id) DO UPDATE SET captcha_text = excluded.captcha_text, expires_at = excluded.expires_at, welcome_message_id = excluded.welcome_message_id, attempts = 0",
+			"INSERT INTO pending_verifications (user_id, group_id, captcha_text, expires_at, welcome_message_id, attempts, rule_ack_done) VALUES (?, ?, ?, ?, ?, 0, ?) ON CONFLICT(user_id, group_id) DO UPDATE SET captcha_text = excluded.captcha_text, expires_at = excluded.expires_at, welcome_message_id = excluded.welcome_message_id, attempts = 0, rule_ack_done = excluded.rule_ack_done",
 		)
-		.bind(userId, groupId, captchaText, expiresAt, welcomeMessageId ?? null)
+		.bind(
+			userId,
+			groupId,
+			captchaText,
+			expiresAt,
+			welcomeMessageId ?? null,
+			ruleAckDone ? 1 : 0,
+		)
+		.run();
+}
+
+export async function setRuleAckDone(
+	db: D1Database,
+	userId: number,
+	groupId: number,
+): Promise<void> {
+	await db
+		.prepare(
+			"UPDATE pending_verifications SET rule_ack_done = 1 WHERE user_id = ? AND group_id = ?",
+		)
+		.bind(userId, groupId)
 		.run();
 }
 
@@ -243,7 +265,7 @@ export async function removePendingVerification(
 }
 
 export async function cleanExpiredVerifications(db: D1Database): Promise<void> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	await db
 		.prepare("DELETE FROM pending_verifications WHERE expires_at < ?")
 		.bind(now)
@@ -272,6 +294,7 @@ export async function createActiveVote(
 	createdAt: number,
 	expiresAt: number,
 ): Promise<void> {
+	await cleanExpiredVotes(db);
 	await db
 		.prepare(
 			"INSERT INTO active_votes (vote_id, group_id, target_id, initiator_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -296,7 +319,7 @@ export async function getActiveVoteForTarget(
 	groupId: number,
 	targetId: number,
 ): Promise<ActiveVote | null> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	const result = await db
 		.prepare(
 			"SELECT * FROM active_votes WHERE group_id = ? AND target_id = ? AND expires_at > ?",
@@ -388,7 +411,7 @@ export async function getVoteCounts(
 }
 
 export async function cleanExpiredVotes(db: D1Database): Promise<void> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	await db
 		.prepare(
 			"DELETE FROM vote_records WHERE vote_id IN (SELECT vote_id FROM active_votes WHERE expires_at < ?)",
@@ -401,8 +424,36 @@ export async function cleanExpiredVotes(db: D1Database): Promise<void> {
 		.run();
 }
 
+export async function acquireLock(
+	db: D1Database,
+	name: string,
+	ttlSeconds: number,
+): Promise<boolean> {
+	const now = currentTimestamp();
+	const expiresAt = now + ttlSeconds;
+	try {
+		await db
+			.prepare(
+				"INSERT INTO locks (name, expires_at) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET expires_at = excluded.expires_at WHERE locks.expires_at < ?",
+			)
+			.bind(name, expiresAt, now)
+			.run();
+		const check = await db
+			.prepare("SELECT expires_at FROM locks WHERE name = ?")
+			.bind(name)
+			.first<{ expires_at: number }>();
+		return check?.expires_at === expiresAt;
+	} catch (_e) {
+		return false;
+	}
+}
+
+export async function releaseLock(db: D1Database, name: string): Promise<void> {
+	await db.prepare("DELETE FROM locks WHERE name = ?").bind(name).run();
+}
+
 export async function getExpiredVotes(db: D1Database): Promise<ActiveVote[]> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	const result = await db
 		.prepare(
 			"SELECT * FROM active_votes WHERE expires_at < ? AND message_id IS NOT NULL",
@@ -421,7 +472,7 @@ export async function addWarning(
 	adminId: number,
 	reason: string,
 ): Promise<void> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	await db
 		.prepare(
 			"INSERT INTO warnings (group_id, user_id, admin_id, reason, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -467,9 +518,24 @@ export async function getWarnings(
 	return result.results;
 }
 
-export async function getAllWarnings(db: D1Database): Promise<Warning[]> {
+export async function getAllWarnings(
+	db: D1Database,
+	userId?: number,
+): Promise<Warning[]> {
+	let query = "SELECT w.* FROM warnings w";
+	const params: (string | number)[] = [];
+
+	if (userId) {
+		query +=
+			" JOIN admin_connections ac ON w.group_id = ac.group_id WHERE ac.user_id = ?";
+		params.push(userId);
+	}
+
+	query += " ORDER BY w.created_at DESC";
+
 	const result = await db
-		.prepare("SELECT * FROM warnings ORDER BY created_at DESC")
+		.prepare(query)
+		.bind(...params)
 		.all<Warning>();
 	return result.results;
 }
@@ -485,7 +551,7 @@ export async function addReport(
 	reportedMessageText: string,
 	content: string,
 ): Promise<void> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	await db
 		.prepare(
 			"INSERT INTO reports (group_id, reporter_id, reported_user_id, reported_message_id, reported_message_text, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -505,18 +571,32 @@ export async function addReport(
 export async function getReports(
 	db: D1Database,
 	status?: string,
+	userId?: number,
 ): Promise<Report[]> {
-	if (status) {
-		const result = await db
-			.prepare(
-				"SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC",
-			)
-			.bind(status)
-			.all<Report>();
-		return result.results;
+	let query = "SELECT r.* FROM reports r";
+	const conditions: string[] = [];
+	const params: (string | number)[] = [];
+
+	if (userId) {
+		query += " JOIN admin_connections ac ON r.group_id = ac.group_id";
+		conditions.push("ac.user_id = ?");
+		params.push(userId);
 	}
+
+	if (status) {
+		conditions.push("r.status = ?");
+		params.push(status);
+	}
+
+	if (conditions.length > 0) {
+		query += ` WHERE ${conditions.join(" AND ")}`;
+	}
+
+	query += " ORDER BY r.created_at DESC";
+
 	const result = await db
-		.prepare("SELECT * FROM reports ORDER BY created_at DESC")
+		.prepare(query)
+		.bind(...params)
 		.all<Report>();
 	return result.results;
 }
@@ -524,10 +604,23 @@ export async function getReports(
 export async function getReport(
 	db: D1Database,
 	reportId: number,
+	userId?: number,
 ): Promise<Report | null> {
+	let query = "SELECT r.* FROM reports r";
+	const conditions: string[] = ["r.id = ?"];
+	const params: (string | number)[] = [reportId];
+
+	if (userId) {
+		query += " JOIN admin_connections ac ON r.group_id = ac.group_id";
+		conditions.push("ac.user_id = ?");
+		params.push(userId);
+	}
+
+	query += ` WHERE ${conditions.join(" AND ")}`;
+
 	const result = await db
-		.prepare("SELECT * FROM reports WHERE id = ?")
-		.bind(reportId)
+		.prepare(query)
+		.bind(...params)
 		.first<Report>();
 	return result ?? null;
 }
@@ -538,7 +631,7 @@ export async function updateReportStatus(
 	status: string,
 	reviewedBy: number,
 ): Promise<void> {
-	const now = Math.floor(Date.now() / 1000);
+	const now = currentTimestamp();
 	await db
 		.prepare(
 			"UPDATE reports SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?",

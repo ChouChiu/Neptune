@@ -6,6 +6,7 @@ import {
 	getVoteCounts,
 } from "../../shared/db/queries";
 import { getNickname } from "../../shared/utils/nickname";
+import { currentTimestamp } from "../../shared/utils/time";
 import { buildVoteText, VOTE_THRESHOLD } from "./vote";
 
 export function registerVotekickHandler(bot: Bot, db: D1Database): void {
@@ -23,7 +24,7 @@ export function registerVotekickHandler(bot: Bot, db: D1Database): void {
 			return;
 		}
 
-		const now = Math.floor(Date.now() / 1000);
+		const now = currentTimestamp();
 		if (now >= vote.expires_at) {
 			if (vote.message_id) {
 				try {

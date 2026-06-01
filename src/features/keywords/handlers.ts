@@ -10,6 +10,8 @@ import type { KeywordRule } from "../../types";
 interface CompiledKeywordRule {
 	rule: KeywordRule;
 	regex?: RegExp;
+	simplifiedRegex?: RegExp;
+	simplifiedPattern?: string;
 }
 
 interface KeywordCacheEntry {
@@ -20,30 +22,51 @@ interface KeywordCacheEntry {
 const keywordCache = new Map<number, KeywordCacheEntry>();
 const KEYWORD_CACHE_TTL = 60_000;
 
-async function getCachedKeywords(
+async function refreshKeywords(
 	db: D1Database,
 	groupId: number,
 ): Promise<CompiledKeywordRule[]> {
-	const cached = keywordCache.get(groupId);
-	if (cached && cached.expiresAt > Date.now()) {
-		return cached.rules;
-	}
 	const rawRules = await getKeywords(db, groupId);
 	const rules: CompiledKeywordRule[] = rawRules.map((rule) => {
+		const simplified = sify(rule.pattern);
 		if (rule.is_regex) {
 			try {
-				return { rule, regex: new RegExp(rule.pattern, "i") };
+				const regex = new RegExp(rule.pattern, "i");
+				let simplifiedRegex: RegExp | undefined;
+				if (simplified !== rule.pattern) {
+					try {
+						simplifiedRegex = new RegExp(simplified, "i");
+					} catch {}
+				}
+				return { rule, regex, simplifiedRegex };
 			} catch {
 				return { rule };
 			}
 		}
-		return { rule };
+		return { rule, simplifiedPattern: simplified.toLowerCase() };
 	});
 	keywordCache.set(groupId, {
 		rules,
 		expiresAt: Date.now() + KEYWORD_CACHE_TTL,
 	});
 	return rules;
+}
+
+async function getCachedKeywords(
+	db: D1Database,
+	groupId: number,
+): Promise<CompiledKeywordRule[]> {
+	const cached = keywordCache.get(groupId);
+	if (cached) {
+		if (cached.expiresAt > Date.now()) {
+			return cached.rules;
+		}
+		refreshKeywords(db, groupId).catch((err) =>
+			console.error("Failed to refresh keyword cache:", err),
+		);
+		return cached.rules;
+	}
+	return refreshKeywords(db, groupId);
 }
 
 function matchKeyword(
@@ -61,17 +84,20 @@ function matchKeyword(
 				const regex = compiled.regex ?? new RegExp(rule.pattern, "i");
 				if (regex.test(text)) return rule;
 				if (hasTraditionalText && regex.test(simplifiedText)) return rule;
-				const simplifiedPattern = sify(rule.pattern);
-				if (simplifiedPattern !== rule.pattern) {
-					const regex2 = new RegExp(simplifiedPattern, "i");
-					if (regex2.test(lowerText) || regex2.test(simplifiedText))
+				if (compiled.simplifiedRegex) {
+					if (
+						compiled.simplifiedRegex.test(lowerText) ||
+						compiled.simplifiedRegex.test(simplifiedText)
+					)
 						return rule;
 				}
 			} catch (error) {
 				console.error("Failed to compile simplified regex:", error);
 			}
 		} else {
-			if (simplifiedText.includes(sify(rule.pattern).toLowerCase())) {
+			const simplifiedPattern =
+				compiled.simplifiedPattern ?? sify(rule.pattern).toLowerCase();
+			if (simplifiedText.includes(simplifiedPattern)) {
 				return rule;
 			}
 		}

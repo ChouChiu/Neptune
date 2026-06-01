@@ -1,3 +1,5 @@
+import { currentTimestamp } from "../../shared/utils/time";
+
 export const VOTE_THRESHOLD = 5;
 
 export function buildVoteText(
@@ -9,16 +11,16 @@ export function buildVoteText(
 ): string {
 	const yesBar = "🟢".repeat(Math.min(yesCount, 10));
 	const noBar = "🔴".repeat(Math.min(noCount, 10));
-	const deadline = new Date(expiresAt * 1000);
-	const hh = String(deadline.getHours()).padStart(2, "0");
-	const mm = String(deadline.getMinutes()).padStart(2, "0");
-	const ss = String(deadline.getSeconds()).padStart(2, "0");
+	const remaining = Math.max(0, expiresAt - currentTimestamp());
+	const minutes = Math.floor(remaining / 60);
+	const seconds = remaining % 60;
+	const timeStr = minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
 	return (
 		`🗳️ 投票踢人\n\n` +
 		`目标: ${targetName}\n` +
 		`发起人: ${initiatorName}\n\n` +
 		`赞成: ${yesBar} ${yesCount}/${VOTE_THRESHOLD}\n` +
 		`反对: ${noBar} ${noCount}\n\n` +
-		`截止时间: ${hh}:${mm}:${ss}`
+		`剩余时间: ${timeStr}`
 	);
 }

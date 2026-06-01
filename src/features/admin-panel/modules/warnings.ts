@@ -12,7 +12,7 @@ export const warningsModule: AdminPanelModule = {
 			const userId = await authenticate(req, env);
 			if (!userId) return unauthorized();
 
-			const warnings = await getAllWarnings(env.db);
+			const warnings = await getAllWarnings(env.db, userId);
 			return Response.json({ warnings });
 		});
 	},

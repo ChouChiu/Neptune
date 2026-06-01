@@ -1,6 +1,7 @@
 import type { Context } from "grammy";
 import { removePendingVerification } from "../../shared/db/queries";
 import { replyOptions } from "../../shared/utils/reply";
+import { currentTimestamp } from "../../shared/utils/time";
 
 const MAX_ATTEMPTS = 5;
 
@@ -87,7 +88,7 @@ export async function handleCaptchaReply(
 			.prepare(
 				"UPDATE pending_verifications SET attempts = attempts + 1 WHERE user_id = ? AND expires_at > ?",
 			)
-			.bind(userId, Math.floor(Date.now() / 1000))
+			.bind(userId, currentTimestamp())
 			.run();
 
 		const firstVerification = verifications.results[0];

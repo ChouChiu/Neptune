@@ -8,6 +8,7 @@ import { getBotUsername } from "../../shared/utils/botInfo";
 import { escapeMarkdown } from "../../shared/utils/markdown";
 import { getNickname } from "../../shared/utils/nickname";
 import { replacePlaceholders } from "../../shared/utils/placeholders";
+import { currentTimestamp } from "../../shared/utils/time";
 import { restrictUser } from "../verify/handlers";
 
 export function registerWelcomeHandlers(bot: Bot, db: D1Database): void {
@@ -58,7 +59,7 @@ export function registerWelcomeHandlers(bot: Bot, db: D1Database): void {
 			});
 
 			const timeout = config.verify_timeout;
-			const expiresAt = Math.floor(Date.now() / 1000) + timeout + 300;
+			const expiresAt = currentTimestamp() + timeout + 300;
 			await addPendingVerification(
 				db,
 				userId,

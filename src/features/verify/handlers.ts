@@ -3,9 +3,11 @@ import {
 	addPendingVerification,
 	getGroupConfig,
 	getPendingVerification,
+	setRuleAckDone,
 } from "../../shared/db/queries";
 import { escapeMarkdown } from "../../shared/utils/markdown";
 import { replyOptions } from "../../shared/utils/reply";
+import { currentTimestamp } from "../../shared/utils/time";
 
 const RULE_ACK_WAIT_SECONDS = 10;
 
@@ -84,14 +86,15 @@ export function registerVerifyHandlers(
 		const welcomeMsgId = existing?.welcome_message_id ?? undefined;
 
 		if (config.rule) {
-			const showTime = Math.floor(Date.now() / 1000);
+			const showTime = currentTimestamp();
 			await addPendingVerification(
 				db,
 				userId,
 				groupId,
 				"",
-				Math.floor(Date.now() / 1000) + config.verify_timeout,
+				currentTimestamp() + config.verify_timeout,
 				welcomeMsgId,
+				true,
 			);
 
 			await ctx.reply(buildRuleText(config.rule, RULE_ACK_WAIT_SECONDS), {
@@ -142,7 +145,7 @@ export function registerVerifyHandlers(
 			return;
 		}
 
-		const now = Math.floor(Date.now() / 1000);
+		const now = currentTimestamp();
 		const elapsed = now - showTime;
 
 		if (elapsed < RULE_ACK_WAIT_SECONDS) {
@@ -173,7 +176,20 @@ export function registerVerifyHandlers(
 		}
 
 		const existing = await getPendingVerification(db, userId, groupId);
-		const welcomeMsgId = existing?.welcome_message_id ?? undefined;
+
+		if (!existing) {
+			await ctx.answerCallbackQuery({ text: "验证已过期，请重新加入群组。" });
+			return;
+		}
+
+		if (existing.rule_ack_done) {
+			await ctx.answerCallbackQuery({ text: "你已经点过啦~" });
+			return;
+		}
+
+		await setRuleAckDone(db, userId, groupId);
+
+		const welcomeMsgId = existing.welcome_message_id ?? undefined;
 
 		await ctx.answerCallbackQuery({ text: "正在生成验证码..." });
 
@@ -222,7 +238,7 @@ async function sendCaptcha(
 	await uploadCaptchaToR2(bucket, captchaKey, captcha.bmp);
 
 	const timeout = config.verify_timeout;
-	const expiresAt = Math.floor(Date.now() / 1000) + timeout;
+	const expiresAt = currentTimestamp() + timeout;
 
 	try {
 		await api.sendPhoto(userId, new InputFile(captcha.bmp, "captcha.bmp"), {
