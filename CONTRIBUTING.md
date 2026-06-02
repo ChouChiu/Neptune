@@ -83,7 +83,6 @@ internal/
 ├── bot/middleware.go         # 日志、recovery、群组初始化中间件
 ├── handler/                  # 所有命令 + 回调 handler
 │   ├── orchestrator.go       # 消息分发：DM→验证码, 群组→AI→关键词
-│   ├── data/                 # 嵌入式 JSON（system-prompt, skills）
 │   └── ...                   # 各功能 handler
 ├── adminpanel/               # Web 管理面板（Chi + Templ + HTMX）
 │   ├── server.go             # Chi 路由注册
@@ -191,7 +190,7 @@ make vet               # go vet
 go build ./...         # 确认编译通过
 ```
 
-> 注意：本项目没有 CI，以上检查需手动执行。
+> CI（`.github/workflows/deploy.yml`）会在推送到 `main` 时自动部署，但本地仍建议手动检查。
 
 ## 提交规范
 

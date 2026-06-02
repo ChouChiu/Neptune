@@ -2,12 +2,13 @@ package model
 
 // Config holds application configuration from environment variables.
 type Config struct {
-	BotToken           string
-	BotUsername        string
-	MimoAPIKey         string
-	ReuseCaptcha       bool
+	BotToken            string
+	BotUsername         string
+	HermesAPIURL        string
+	HermesAPIKey        string
+	ReuseCaptcha        bool
 	GitHubWebhookSecret string
-	ReleaseChannelID   int64
+	ReleaseChannelID    int64
 }
 
 // GroupConfig represents a group's configuration.

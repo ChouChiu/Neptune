@@ -27,7 +27,7 @@ make vet               # go vet
 go build ./...         # verify compilation
 ```
 
-There is no CI — these checks are manual.
+CI: `.github/workflows/deploy.yml` auto-deploys on push to `main` (installs templ, generates, builds, uploads, restarts). Manual checks still recommended locally before push.
 
 ## Environment variables
 
@@ -37,7 +37,8 @@ Loaded from `.env` (gitignored). Required:
 |----------|---------|
 | `BOT_TOKEN` | Telegram bot token (required, exits if missing) |
 | `BOT_USERNAME` | Bot username without `@` — used for `command@username` handler registration |
-| `MIMO_API_KEY` | Xiaomi MiMo V2.5 API key for AI chat |
+| `HERMES_API_URL` | Hermes Agent API Server URL (default `http://127.0.0.1:8642/v1`) |
+| `HERMES_API_KEY` | Bearer token for Hermes API Server authentication |
 | `GITHUB_WEBHOOK_SECRET` | HMAC-SHA256 secret for GitHub webhook + `/set-webhook` auth |
 | `RELEASE_CHANNEL_ID` | Telegram channel ID for GitHub release notifications |
 | `REUSE_CAPTCHA` | `"true"` to reuse captcha images across users |
@@ -81,11 +82,13 @@ Standard Go server layout: `internal/` enforced private by compiler, `cmd/` for 
 ## AI chat
 
 - Triggered by @mention or replying to bot messages in groups
-- MiMo API: `POST https://token-plan-sgp.xiaomimimo.com/v1/chat/completions`, model `mimo-v2.5`
-- **Header**: `api-key` (NOT `Authorization: Bearer`)
+- Hermes Agent API Server: `POST {HERMES_API_URL}/chat/completions` (OpenAI-compatible)
+  - Default: `http://127.0.0.1:8642/v1`
+  - Auth: `Authorization: Bearer {HERMES_API_KEY}`
+  - Model: `hermes-agent` (Hermes uses its configured backend model)
+- Role card and world lore defined in Hermes `SOUL.md` (deploy/hermes/SOUL.md)
 - Context in SQLite `kv` table as `ai:context:{groupId}`, limited to 50 messages (7-day window)
 - Daily usage: 15/day per user, admins exempt (`ai_chat_usage` table)
-- System prompt: `internal/handler/data/system-prompt.json` (embedded via `//go:embed`)
 - API timeout 25s via `context.WithTimeout`, retries up to 2 times on 429/5xx
 - `ShouldTriggerAi()` filters replies to system messages using keyword list
 - Typing indicator: goroutine + `context.WithCancel` (not polling)
@@ -133,4 +136,4 @@ make deploy DEPLOY_HOST=user@your-server                         # daily deploy
 make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=your-secret   # register webhook
 ```
 
-Prerequisites: Debian/Ubuntu VPS, domain pointing to server, `BOT_TOKEN` + `BOT_USERNAME` + `MIMO_API_KEY`.
+Prerequisites: Debian/Ubuntu VPS, domain pointing to server, `BOT_TOKEN` + `BOT_USERNAME`. AI chat requires Hermes Agent with `MIMO_API_KEY` configured in Hermes (not a Neptune env var).

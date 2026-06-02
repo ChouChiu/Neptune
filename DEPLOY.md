@@ -5,6 +5,67 @@
 - 一台 Debian/Ubuntu VPS（推荐 1C1G 以上）
 - 一个域名，已解析到该服务器的 IP
 - 本地已安装 Go 1.26+（用于编译）
+- VPS 上已安装 Hermes Agent（AI 聊天后端）
+
+## Hermes Agent 安装（首次部署前执行）
+
+Neptune 的 AI 聊天功能依赖 Hermes Agent 作为后端。在 VPS 上执行：
+
+```bash
+# 安装 Hermes Agent
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+source ~/.bashrc
+hermes --version
+```
+
+### 配置 Hermes
+
+```bash
+# 创建配置目录
+mkdir -p ~/.hermes
+
+# 配置模型（使用小米 MiMo）
+cat > ~/.hermes/config.yaml << 'EOF'
+model:
+  provider: custom
+  base_url: https://token-plan-sgp.xiaomimimo.com/v1
+  api_key: <你的 MIMO_API_KEY>
+  default: mimo-v2.5
+EOF
+
+# 配置 API Server
+cat > ~/.hermes/.env << 'EOF'
+API_SERVER_ENABLED=true
+API_SERVER_HOST=127.0.0.1
+API_SERVER_PORT=8642
+API_SERVER_KEY=<生成一个随机密钥>
+EOF
+
+# 部署角色卡
+cp deploy/hermes/SOUL.md ~/.hermes/SOUL.md
+```
+
+### 注册为 systemd 服务
+
+```bash
+sudo cp deploy/hermes/hermes.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable hermes
+sudo systemctl start hermes
+sudo systemctl status hermes
+```
+
+### 验证 Hermes 运行
+
+```bash
+curl -s http://127.0.0.1:8642/health
+# 应返回: {"status": "ok"}
+
+curl -s http://127.0.0.1:8642/v1/chat/completions \
+  -H "Authorization: Bearer <HERMES_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "hermes-agent", "messages": [{"role": "user", "content": "你好"}]}'
+```
 
 ## 首次部署（从零开始）
 
@@ -22,7 +83,8 @@ cp .env.example .env
 |------|----------|
 | `BOT_TOKEN` | 在 Telegram 找 [@BotFather](https://t.me/BotFather)，发送 `/newbot` 创建机器人 |
 | `BOT_USERNAME` | BotFather 创建时分配的用户名（不含 `@`） |
-| `MIMO_API_KEY` | 小米 MiMo API 密钥（AI 聊天功能） |
+| `HERMES_API_URL` | Hermes Agent API 地址（默认 `http://127.0.0.1:8642/v1`） |
+| `HERMES_API_KEY` | 与 Hermes `API_SERVER_KEY` 一致（AI 聊天功能） |
 | `GITHUB_WEBHOOK_SECRET` | 自行生成：`openssl rand -hex 32` |
 
 ### 第二步：初始化服务器
@@ -49,7 +111,7 @@ SSH 到服务器，编辑配置文件：
 sudo nano /opt/neptune/.env
 ```
 
-填入 `BOT_TOKEN`、`BOT_USERNAME`、`MIMO_API_KEY`、`GITHUB_WEBHOOK_SECRET` 等。
+填入 `BOT_TOKEN`、`BOT_USERNAME`、`HERMES_API_KEY`、`GITHUB_WEBHOOK_SECRET` 等。
 
 ### 第四步：启动服务
 

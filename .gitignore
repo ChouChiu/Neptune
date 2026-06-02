@@ -13,3 +13,6 @@
 
 # Go build output
 bin/
+
+# Generated templ Go files
+*_templ.go

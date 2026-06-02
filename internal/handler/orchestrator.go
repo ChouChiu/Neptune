@@ -28,7 +28,7 @@ func Orchestrator(database *db.DB, cfg *model.Config) tgbot.HandlerFunc {
 
 		// Group chat: AI chat → keyword match
 		if update.Message.Chat.Type == "group" || update.Message.Chat.Type == "supergroup" {
-			if HandleAiChat(ctx, b, database, cfg.MimoAPIKey, update) {
+			if HandleAiChat(ctx, b, database, cfg.HermesAPIURL, cfg.HermesAPIKey, update) {
 				return
 			}
 			if HandleKeywordMatch(ctx, b, database, update) {

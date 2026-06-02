@@ -1,0 +1,5 @@
+model:
+  provider: custom
+  base_url: https://token-plan-sgp.xiaomimimo.com/v1
+  api_key: ${MIMO_API_KEY}
+  default: mimo-v2.5

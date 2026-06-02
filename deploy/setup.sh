@@ -206,7 +206,8 @@ else
 # ===== 必填 =====
 BOT_TOKEN=
 BOT_USERNAME=
-MIMO_API_KEY=
+HERMES_API_URL=http://127.0.0.1:8642/v1
+HERMES_API_KEY=
 
 # ===== 建议配置 =====
 GITHUB_WEBHOOK_SECRET=

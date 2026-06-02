@@ -24,9 +24,14 @@ func main() {
 	cfg := &model.Config{
 		BotToken:            os.Getenv("BOT_TOKEN"),
 		BotUsername:         os.Getenv("BOT_USERNAME"),
-		MimoAPIKey:          os.Getenv("MIMO_API_KEY"),
+		HermesAPIURL:        os.Getenv("HERMES_API_URL"),
+		HermesAPIKey:        os.Getenv("HERMES_API_KEY"),
 		ReuseCaptcha:        os.Getenv("REUSE_CAPTCHA") == "true",
 		GitHubWebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
+	}
+
+	if cfg.HermesAPIURL == "" {
+		cfg.HermesAPIURL = "http://127.0.0.1:8642/v1"
 	}
 
 	if cfg.BotToken == "" {
