@@ -637,3 +637,23 @@ Week 7-8    阶段 6  部署、数据迁移、端到端测试
 - [ ] captcha BMP 可查看（待验证）
 
 **下一步**: 阶段 2 — Bot 框架与简单命令
+
+### 阶段 2：Bot 框架与简单命令 ✅ 已完成
+
+**完成日期**: 2026-06-02
+
+| # | 任务 | 状态 | 备注 |
+|---|------|------|------|
+| 2.1 | `bot/bot.go` | ✅ | New() 创建 Bot，注册 handler + middleware |
+| 2.2 | `bot/middleware.go` | ✅ | loggingMiddleware, recoveryMiddleware, groupInitMiddleware |
+| 2.3 | `handler/ping.go` | ✅ | /ping → "🏓 Pong!" |
+| 2.4 | `handler/help.go` | ✅ | /help → 完整帮助文本 |
+| 2.5 | `handler/admin.go` | ✅ | /id, /connect, /switch + switch: callback |
+| 2.6 | `cmd/neptune/main.go` | ✅ | HTTP server + webhook + graceful shutdown |
+
+**验证结果**:
+- [x] `go build ./...` 编译通过
+- [x] `go vet ./...` 无警告
+- [ ] 本地启动 bot，响应 /ping /help /id（待手动验证）
+
+**下一步**: 阶段 3 — 群组管理功能
