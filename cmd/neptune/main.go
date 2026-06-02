@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
+	"github.com/kazumi-group/neptune/internal/adminpanel"
 	"github.com/kazumi-group/neptune/internal/bot"
 	"github.com/kazumi-group/neptune/internal/db"
 	"github.com/kazumi-group/neptune/internal/github"
@@ -80,6 +81,10 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 	})
+
+	// Admin panel — ServeMux auto-redirects /admin → /admin/
+	adminHandler := adminpanel.NewServer(database, cfg.BotToken, cfg.BotUsername)
+	mux.Handle("/admin/", http.StripPrefix("/admin", adminHandler))
 
 	// GitHub webhook endpoint
 	mux.HandleFunc("/github-webhook", func(w http.ResponseWriter, r *http.Request) {

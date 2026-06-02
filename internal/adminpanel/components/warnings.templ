@@ -1,0 +1,53 @@
+package components
+
+import (
+	"fmt"
+
+	"github.com/kazumi-group/neptune/internal/model"
+)
+
+// WarningRows renders a table of warnings as an HTML fragment for HTMX.
+templ WarningRows(warnings []model.Warning) {
+	if len(warnings) == 0 {
+		@EmptyState("✅", "暂无警告记录")
+	} else {
+		<div class="island bg-neutral-950 border border-white/10 rounded-2xl overflow-hidden">
+			<div class="overflow-x-auto">
+				<table class="w-full text-left">
+					<thead>
+						<tr class="bg-white/[0.02]">
+							<th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">ID</th>
+							<th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">群组</th>
+							<th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">用户</th>
+							<th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">操作人</th>
+							<th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">原因</th>
+							<th class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-neutral-500">时间</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, w := range warnings {
+							@warningRow(w)
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
+}
+
+templ warningRow(w model.Warning) {
+	<tr class="border-b border-white/5 hover:bg-white/5 transition-colors">
+		<td class="px-4 py-3 text-xs font-mono text-neutral-500">#{ fmt.Sprintf("%d", w.ID) }</td>
+		<td class="px-4 py-3 text-xs font-mono text-neutral-500">{ fmt.Sprintf("%d", w.GroupID) }</td>
+		<td class="px-4 py-3 text-xs font-mono text-neutral-500">{ fmt.Sprintf("%d", w.UserID) }</td>
+		<td class="px-4 py-3 text-xs font-mono text-neutral-500">{ fmt.Sprintf("%d", w.AdminID) }</td>
+		<td class="px-4 py-3 text-sm">
+			if w.Reason != "" {
+				{ w.Reason }
+			} else {
+				<span class="text-neutral-600">-</span>
+			}
+		</td>
+		<td class="px-4 py-3 text-xs text-neutral-500">{ FormatTimeAgo(w.CreatedAt) }</td>
+	</tr>
+}

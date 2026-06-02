@@ -1,0 +1,407 @@
+package components
+
+templ Layout(botUsername string) {
+	<!DOCTYPE html>
+	<html lang="zh-CN">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>Neptune Admin</title>
+			<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+			<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.6"></script>
+			<style>
+				@keyframes spin { to { transform: rotate(360deg); } }
+				.spinner {
+					width: 18px; height: 18px;
+					border: 2px solid rgba(255,255,255,0.1);
+					border-top-color: white;
+					border-radius: 50%;
+					animation: spin 0.6s linear infinite;
+				}
+				@keyframes fadeInUp {
+					from { opacity: 0; transform: translateY(12px); }
+					to { opacity: 1; transform: translateY(0); }
+				}
+				@keyframes slideInDown {
+					from { opacity: 0; transform: translateY(-20px); }
+					to { opacity: 1; transform: translateY(0); }
+				}
+				@keyframes fadeOut {
+					from { opacity: 1; }
+					to { opacity: 0; }
+				}
+				@keyframes fadeScale {
+					from { opacity: 0; }
+					to { opacity: 1; }
+				}
+				.login-enter { animation: fadeInUp 0.4s ease; }
+				.toast-enter { animation: slideInDown 0.3s ease; }
+				.toast-exit { animation: fadeOut 0.3s ease forwards; }
+				.island { animation: fadeScale 0.25s ease both; }
+				.island:nth-child(2) { animation-delay: 0.04s; }
+				.island:nth-child(3) { animation-delay: 0.08s; }
+				body[data-state="app"] #login-page { display: none !important; }
+				body[data-state="login"] #sidebar { display: none !important; }
+				body[data-state="login"] #sidebar-backdrop { display: none !important; }
+				body[data-state="login"] #main-wrapper { display: none !important; }
+				::-webkit-scrollbar { width: 5px; }
+				::-webkit-scrollbar-track { background: transparent; }
+				::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+				::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+			</style>
+		</head>
+		<body data-state="login" class="bg-black text-white min-h-screen overflow-hidden">
+			@LoginPage(botUsername)
+			@SidebarBackdrop()
+			@Sidebar()
+			@MainWrapper()
+			@PageScripts(botUsername)
+		</body>
+	</html>
+}
+
+templ LoginPage(botUsername string) {
+	<div id="login-page" class="fixed inset-0 z-50 flex items-center justify-center bg-black">
+		<div class="login-enter text-center p-10 bg-white/[0.03] border border-white/10 rounded-2xl max-w-sm w-[90%] shadow-2xl shadow-black/50">
+			<div class="text-5xl mb-4">♆</div>
+			<h2 class="text-xl font-bold mb-1">Neptune Admin</h2>
+			<p class="text-sm text-neutral-500 mb-7">请使用 Telegram 账号登录</p>
+			<div id="tg-widget">
+				<script
+					async
+					src="https://telegram.org/js/telegram-widget.js?22"
+					data-telegram-login={ botUsername }
+					data-size="large"
+					data-request-access="write"
+					data-onauth="onTelegramAuth"
+				></script>
+			</div>
+			<p id="login-hint" class="text-xs text-neutral-600 mt-4">需要管理员权限才能登录</p>
+			<div id="login-loading" class="hidden mt-4 flex items-center justify-center gap-2 text-sm text-neutral-400">
+				<div class="spinner"></div>
+				正在登录...
+			</div>
+			<div id="login-error" class="hidden mt-4 text-sm text-red-400"></div>
+		</div>
+	</div>
+}
+
+templ SidebarBackdrop() {
+	<div
+		id="sidebar-backdrop"
+		class="hidden fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden"
+		onclick="closeSidebar()"
+	></div>
+}
+
+templ Sidebar() {
+	<nav id="sidebar" class="fixed top-3 left-3 bottom-3 z-40 w-60 bg-neutral-950 border border-white/10 rounded-2xl flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200 shadow-xl shadow-black/40">
+		<div class="px-5 py-5 border-b border-white/10">
+			<h1 class="text-base font-bold tracking-tight flex items-center gap-2">
+				<span class="text-lg">♆</span> Neptune Admin
+			</h1>
+		</div>
+		<div id="sidebar-nav" class="flex-1 p-3 flex flex-col gap-0.5 overflow-y-auto"></div>
+		<div id="sidebar-footer" class="hidden px-5 py-4 border-t border-white/10 items-center gap-3">
+			<div id="user-avatar" class="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center text-sm font-bold">?</div>
+			<span id="user-name" class="text-sm text-neutral-400">-</span>
+		</div>
+	</nav>
+}
+
+templ MainWrapper() {
+	<div id="main-wrapper" class="lg:ml-[252px] flex flex-col h-screen">
+		<div class="px-3 lg:px-5 pt-3 pb-2">
+			<div class="island bg-neutral-950 border border-white/10 rounded-2xl flex items-center justify-between px-4 lg:px-5 py-3">
+				<div class="flex items-center gap-3">
+					<button onclick="toggleSidebar()" class="lg:hidden p-1.5 -ml-1.5 rounded-lg hover:bg-white/5 transition-colors">
+						☰
+					</button>
+					<h2 id="topbar-title" class="text-base font-bold tracking-tight flex items-center gap-2"></h2>
+				</div>
+			</div>
+		</div>
+		<main id="main-area" class="flex-1 overflow-y-auto px-3 lg:px-5 pb-5">
+			<div id="content-area"></div>
+		</main>
+	</div>
+}
+
+templ PageScripts(botUsername string) {
+	<script>
+	'use strict';
+
+	// ── API helper ──
+	var API = {
+		fetch: function(url, opts) {
+			opts = opts || {};
+			opts.credentials = 'same-origin';
+			if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+				opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers);
+				opts.body = JSON.stringify(opts.body);
+			}
+			return fetch(url, opts).then(function(r) {
+				if (r.status === 401) { window.__adminUser = null; window.__render(); throw new Error('Unauthorized'); }
+				return r;
+			});
+		},
+		get: function(url) { return this.fetch(url).then(function(r) { return r.text(); }); },
+		post: function(url, body) { return this.fetch(url, { method: 'POST', body: body }).then(function(r) { return r.json(); }); }
+	};
+
+	function timeAgo(ts) {
+		var diff = Math.floor(Date.now() / 1000) - ts;
+		if (diff < 60) return diff + '秒前';
+		if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+		if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+		return Math.floor(diff / 86400) + '天前';
+	}
+
+	function esc(s) {
+		if (!s) return '';
+		var d = document.createElement('div');
+		d.textContent = s;
+		return d.innerHTML;
+	}
+
+	function toast(msg, type) {
+		type = type || 'error';
+		var colors = type === 'success'
+			? 'border-green-500/30 text-green-400'
+			: type === 'warning'
+			? 'border-yellow-500/30 text-yellow-400'
+			: 'border-red-500/30 text-red-400';
+		var el = document.createElement('div');
+		el.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 bg-neutral-900 border rounded-lg text-sm font-medium shadow-2xl shadow-black/50 toast-enter ' + colors;
+		el.textContent = msg;
+		document.body.appendChild(el);
+		setTimeout(function() {
+			el.className = el.className.replace('toast-enter', 'toast-exit');
+			setTimeout(function() { el.remove(); }, 300);
+		}, 3000);
+	}
+
+	// ── Login ──
+	var __loginInProgress = false;
+
+	function showLoginError(msg) {
+		var el = document.getElementById('login-error');
+		if (!el) return;
+		el.textContent = msg;
+		el.classList.remove('hidden');
+		setTimeout(function() { el.classList.add('hidden'); }, 4000);
+	}
+
+	function setLoginLoading(loading) {
+		var widget = document.getElementById('tg-widget');
+		var spinner = document.getElementById('login-loading');
+		var hint = document.getElementById('login-hint');
+		if (loading) {
+			if (widget) widget.style.display = 'none';
+			if (spinner) spinner.classList.remove('hidden');
+			if (hint) hint.classList.add('hidden');
+		} else {
+			if (widget) widget.style.display = '';
+			if (spinner) spinner.classList.add('hidden');
+			if (hint) hint.classList.remove('hidden');
+		}
+	}
+
+	function doTelegramLogin(data) {
+		if (__loginInProgress) return;
+		__loginInProgress = true;
+		setLoginLoading(true);
+		fetch('/admin/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify(data)
+		}).then(function(r) { return r.json(); }).then(function(res) {
+			if (res.ok) {
+				var spinner = document.getElementById('login-loading');
+				if (spinner) spinner.innerHTML = '<span class="text-green-400">登录成功 ✓</span>';
+				setTimeout(function() {
+					document.body.setAttribute('data-state', 'app');
+					window.__adminUser = res.user;
+					window.__renderDashboard();
+				}, 500);
+			} else {
+				__loginInProgress = false;
+				setLoginLoading(false);
+				showLoginError(res.error || '登录失败，请重试');
+			}
+		}).catch(function() {
+			__loginInProgress = false;
+			setLoginLoading(false);
+			showLoginError('网络错误，请重试');
+		});
+	}
+
+	function onTelegramAuth(data) {
+		doTelegramLogin(data);
+	}
+
+	window.addEventListener('message', function(e) {
+		if (e.origin !== 'https://oauth.telegram.org') return;
+		try {
+			var d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+			if (d.event === 'auth_user' && d.auth_data) {
+				doTelegramLogin(d.auth_data);
+			}
+		} catch (_) {}
+	});
+
+	// ── Sidebar & Sections ──
+	var SECTIONS = [
+		{ id: 'reports', label: '举报管理', icon: '✉️', url: '/admin/reports' },
+		{ id: 'warnings', label: '警告记录', icon: '⚠️', url: '/admin/warnings' }
+	];
+	var currentSection = null;
+
+	function toggleSidebar() {
+		var sidebar = document.getElementById('sidebar');
+		var backdrop = document.getElementById('sidebar-backdrop');
+		if (!sidebar || !backdrop) return;
+		var isOpen = !sidebar.classList.contains('-translate-x-full');
+		if (isOpen) { closeSidebar(); }
+		else { sidebar.classList.remove('-translate-x-full'); backdrop.classList.remove('hidden'); }
+	}
+
+	function closeSidebar() {
+		var sidebar = document.getElementById('sidebar');
+		var backdrop = document.getElementById('sidebar-backdrop');
+		if (sidebar) sidebar.classList.add('-translate-x-full');
+		if (backdrop) backdrop.classList.add('hidden');
+	}
+
+	window.__renderDashboard = function() {
+		var user = window.__adminUser;
+		if (!user) return;
+		document.body.setAttribute('data-state', 'app');
+
+		var nav = document.getElementById('sidebar-nav');
+		nav.innerHTML = '';
+		SECTIONS.forEach(function(s) {
+			var item = document.createElement('div');
+			item.className = 'flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer text-sm font-medium transition-colors ' +
+				(currentSection === s.id ? 'bg-white/10 text-white' : 'text-neutral-400 hover:bg-white/5 hover:text-white');
+			item.innerHTML = '<span class="text-lg">' + s.icon + '</span><span>' + esc(s.label) + '</span>';
+			item.onclick = function() {
+				currentSection = s.id;
+				window.__renderDashboard();
+				closeSidebar();
+			};
+			nav.appendChild(item);
+		});
+
+		var avatar = document.getElementById('user-avatar');
+		avatar.textContent = (user.first_name || '?')[0].toUpperCase();
+		var nameEl = document.getElementById('user-name');
+		nameEl.textContent = user.username ? '@' + user.username : (user.first_name || '');
+		document.getElementById('sidebar-footer').classList.remove('hidden');
+
+		if (!currentSection && SECTIONS.length > 0) currentSection = SECTIONS[0].id;
+		var section = SECTIONS.find(function(s) { return s.id === currentSection; });
+		if (!section) return;
+
+		var topbarTitle = document.getElementById('topbar-title');
+		if (topbarTitle) topbarTitle.innerHTML = '<span>' + section.icon + '</span><span>' + esc(section.label) + '</span>';
+
+		var contentArea = document.getElementById('content-area');
+		contentArea.innerHTML = '<div class="flex items-center justify-center gap-3 py-16 text-neutral-600 text-sm"><div class="spinner"></div>加载中...</div>';
+
+		// Load section content via HTMX
+		if (section.id === 'reports') {
+			loadReportsSection(contentArea);
+		} else if (section.id === 'warnings') {
+			loadWarningsSection(contentArea);
+		}
+	};
+
+	// ── Reports Section ──
+	function loadReportsSection(container) {
+		var filters = [
+			{ key: 'pending', label: '待处理' },
+			{ key: 'approved', label: '已通过' },
+			{ key: 'dismissed', label: '已驳回' },
+			{ key: '', label: '全部' }
+		];
+		var currentFilter = 'pending';
+
+		function renderFilters() {
+			var html = '<div class="island bg-neutral-950 border border-white/10 rounded-2xl p-5 mb-4"><div class="flex flex-wrap gap-2">';
+			filters.forEach(function(f) {
+				html += '<button class="px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ' +
+					(currentFilter === f.key ? 'bg-white text-black border-white' : 'border-white/15 text-neutral-400 hover:text-white hover:border-white/30') +
+					'" data-f="' + f.key + '">' + f.label + '</button>';
+			});
+			html += '</div></div>';
+			return html;
+		}
+
+		function bindResolveButtons() {
+			document.querySelectorAll('.resolve-btn').forEach(function(btn) {
+				btn.onclick = function() {
+					var id = btn.getAttribute('data-id');
+					var action = btn.getAttribute('data-action');
+					API.post('/admin/api/reports/' + id + '/resolve', { status: action }).then(function() {
+						toast('操作成功', 'success');
+						load(currentFilter);
+					}).catch(function() { toast('操作失败'); });
+				};
+			});
+		}
+
+		function load(filter) {
+			currentFilter = filter;
+			container.innerHTML = renderFilters() +
+				'<div id="report-list"><div class="flex items-center justify-center gap-3 py-16 text-neutral-600 text-sm"><div class="spinner"></div>加载中...</div></div>';
+			container.querySelectorAll('[data-f]').forEach(function(btn) {
+				btn.onclick = function() { load(btn.getAttribute('data-f')); };
+			});
+			var url = '/admin/api/reports' + (filter ? '?status=' + filter : '');
+			API.get(url).then(function(html) {
+				var list = document.getElementById('report-list');
+				if (list) {
+					list.innerHTML = html;
+					bindResolveButtons();
+				}
+			}).catch(function() {
+				var list = document.getElementById('report-list');
+				if (list) list.innerHTML = '<div class="text-center py-16 text-red-400 text-sm">加载失败</div>';
+			});
+		}
+
+		load('pending');
+	}
+
+	// ── Warnings Section ──
+	function loadWarningsSection(container) {
+		container.innerHTML = '<div id="warnings-list"><div class="flex items-center justify-center gap-3 py-16 text-neutral-600 text-sm"><div class="spinner"></div>加载中...</div></div>';
+		API.get('/admin/api/warnings').then(function(html) {
+			var list = document.getElementById('warnings-list');
+			if (list) list.innerHTML = html;
+		}).catch(function() {
+			var list = document.getElementById('warnings-list');
+			if (list) list.innerHTML = '<div class="text-center py-16 text-red-400 text-sm">加载失败</div>';
+		});
+	}
+
+	// ── Init ──
+	API.get('/admin/auth/me').then(function(text) {
+		try {
+			var res = JSON.parse(text);
+			if (res.user) window.__adminUser = res.user;
+		} catch (_) {}
+		window.__render();
+	}).catch(function() { window.__render(); });
+
+	window.__render = function() {
+		if (!window.__adminUser) {
+			document.body.setAttribute('data-state', 'login');
+			return;
+		}
+		window.__renderDashboard();
+	};
+	</script>
+}

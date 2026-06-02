@@ -724,3 +724,44 @@ Week 7-8    阶段 6  部署、数据迁移、端到端测试
 - [ ] GitHub test release → 频道收到消息（待手动验证）
 
 **下一步**: 阶段 5 — Admin Panel（Chi + Templ + HTMX）
+
+### 阶段 5：Admin Panel（Chi + Templ + HTMX）✅ 已完成
+
+**完成日期**: 2026-06-02
+
+| # | 任务 | 状态 | 备注 |
+|---|------|------|------|
+| 5.1 | `adminpanel/server.go` | ✅ | Chi router 注册所有 admin 路由，`NewServer()` 返回 `http.Handler` |
+| 5.2 | `adminpanel/auth.go` | ✅ | Telegram Login Widget HMAC-SHA256 验证 + session 签名/验证 |
+| 5.3 | `adminpanel/middleware.go` | ✅ | Chi 中间件：cookie→验证→注入 userId 到 context |
+| 5.4 | `adminpanel/components/layout.templ` | ✅ | 完整 SPA 布局：sidebar + topbar + content area + 全部 JS |
+| 5.5 | `adminpanel/components/common.templ` | ✅ | Toast、EmptyState、Spinner、StatusBadge、FilterButtons |
+| 5.6 | `adminpanel/components/reports.templ` | ✅ | ReportCards 渲染 + resolve 按钮（data-attr + event delegation） |
+| 5.7 | `adminpanel/components/warnings.templ` | ✅ | WarningRows 表格渲染 |
+| 5.8 | `adminpanel/handler/reports.go` | ✅ | ListReports（HTML fragment）+ ResolveReport（JSON API） |
+| 5.9 | `adminpanel/handler/warnings.go` | ✅ | ListWarnings（HTML fragment） |
+| 5.10 | `adminpanel/handler/helpers.go` | ✅ | handleApproved/handleDismissed + tgAPICall + 截断辅助函数 |
+
+**附加产出**:
+- `cmd/neptune/main.go` — 新增 `/admin` 和 `/admin/` 路由挂载
+- `go.mod` — 新增 `github.com/go-chi/chi/v5`、`github.com/a-h/templ` 依赖
+- Makefile `generate` 目标已存在，用于 `templ generate`
+
+**关键实现细节**:
+- 使用 templ 编译时模板引擎替代原 TS 的运行时 HTML 字符串拼接
+- SPA 架构：页面 JS 管理 section 切换（reports/warnings），通过 `fetch` API 加载 HTML fragment
+- API 端点返回 HTML fragment（templ 渲染）供前端插入，非 JSON
+- `resolve-btn` 使用 `data-id` + `data-action` 属性 + event delegation（templ 不支持 inline onclick 字符串）
+- Telegram Login Widget 验证：`secret_key = SHA256(bot_token)`，`HMAC(secret_key, data_check_string)`
+- Session cookie: `nep_session = userId:expiresAt:hmac_sig`，HttpOnly + Secure + SameSite=Lax
+- `handleApproved` side effects: 删除被举报消息 + 添加警告 + 通知群组 + 通知举报人
+- `handleDismissed` side effects: 通知举报人审核未通过
+- Telegram API 调用使用 `net/http` 标准库，10s 超时，错误仅记录日志
+
+**验证结果**:
+- [x] `go build ./...` 编译通过
+- [x] `go vet ./...` 无警告
+- [ ] 浏览器 /admin → 登录 → 报告列表 → 审批（待手动验证）
+- [ ] 警告列表加载（待手动验证）
+
+**下一步**: 阶段 6 — 部署与收尾
