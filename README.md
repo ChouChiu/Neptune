@@ -4,7 +4,7 @@
 > 
 > 诶？你说为什么是海王星女神来管群组？因为人家是「主人公」啊！涅普♪
 
-**Neptune** - 穿越到 Telegram 群组的紫耀之都守护女神，基于 Cloudflare Workers 构建的群管理Bot！
+**Neptune** - 穿越到 Telegram 群组的紫耀之都守护女神，基于 Go 构建的群管理Bot！单二进制部署，SQLite 存储。
 
 虽然平时有点懒散，但关键时刻可是很可靠的涅普！（大概）
 
@@ -17,7 +17,7 @@
 - **投票踢人** - 群成员投票踢人，支持启用/禁用，过期自动清理，民主的力量！（虽然涅普觉得直接踢更省事……）
 - **管理员私聊管理** - 通过私聊管理群组设置，支持多群组切换，指挥官的特权~涅普也会乖乖听话的！
 - **举报与警告** - 群成员可通过 `/report` 举报违规消息，管理员通过 `/warn` 直接警告用户，举报由 Web 管理面板审核处理，自动删除违规消息并通知举报人。
-- **Web 管理面板** - 基于 Telegram Login Widget 认证的网页后台（`worker域名/admin`），支持举报审核和警告管理，指挥官的作战指挥室！
+- **Web 管理面板** - 基于 Telegram Login Widget 认证的网页后台（`域名/admin`），支持举报审核和警告管理，指挥官的作战指挥室！
 - **GitHub Release 通知** - 自动接收 Kazumi 仓库新 Release 并发送到 Telegram 频道，新版本的情报就交给人家吧！发布完了记得请涅普吃布丁哦？
 - **权限控制** - 所有管理命令仅限管理员使用，越权什么的不可以哦！涅普可是很有原则的！（才不是因为懒呢）
 
@@ -84,7 +84,7 @@
 | `/report <原因>` | 回复目标用户消息提交举报（群成员可用），管理员在 Web 面板审核处理 |
 | `/warn [原因]` | 回复目标用户消息进行警告（管理员可用），记录警告次数 |
 
-- **管理面板**：访问 `worker域名/admin` 登录后可审核举报（通过/驳回）和查看警告记录
+- **管理面板**：访问 `域名/admin` 登录后可审核举报（通过/驳回）和查看警告记录
 - **举报处理**：通过后自动删除违规消息并警告用户，举报人收到结果通知
 
 AI 聊天（和真正的涅普聊天！）
@@ -119,12 +119,33 @@ AI 聊天（和真正的涅普聊天！）
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。（涅普不太懂这些，但指挥官应该没问题吧？）
 
+### 本地开发（Go 版）
+
 ```bash
-bun install           # 安装依赖（涅普帮你装好了~）
-bun run dev           # 本地开发（涅普在旁边看着你写代码！）
-bun run lint          # Biome 检查（代码要写得漂亮哦！）
-bun run typecheck     # TypeScript 类型检查（涅普帮你检查！）
-bun run deploy        # 部署到 Cloudflare（涅普帮你发布！）
+# 安装依赖
+go mod download
+
+# 生成 templ 模板（修改 *.templ 文件后需重新运行）
+make generate
+
+# 本地运行（需要 .env 配置）
+make dev              # air 热重载
+
+# 构建 & 测试
+make build            # 编译
+make test             # 运行测试
+make lint             # 静态分析
+make vet              # go vet
+```
+
+### 部署到 VPS
+
+详见 [DEPLOY.md](DEPLOY.md)。（从零到上线，照着做就行！）
+
+```bash
+make setup DEPLOY_HOST=root@你的服务器 DOMAIN=你的域名  # 首次初始化
+make deploy DEPLOY_HOST=user@你的服务器                  # 日常更新
+make help                                                # 查看所有命令
 ```
 
 ## License
@@ -137,7 +158,7 @@ MIT（涅普觉得这个协议挺好的，很自由~）
 
 **Neptune** - 穿越到 Telegram 群组的紫耀之都守护女神
 
-Made with ❤️ and TypeScript（还有布丁！）
+Made with ❤️ and Go（还有布丁！）
 
 涅普涅普，出击！(๑•̀ㅂ•́)و✧
 

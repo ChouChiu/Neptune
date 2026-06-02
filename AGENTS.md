@@ -1,148 +1,136 @@
 # AGENTS.md
 
-Telegram group management bot (Neptune), deployed on Cloudflare Workers.
+Telegram group management bot (Neptune). **Go single-binary** on Debian VPS with SQLite. Legacy Cloudflare Workers version exists but is no longer the primary target.
 
 ## Commands
 
 ```bash
-bun install              # install deps
-bun run lint             # Biome check (NOT ESLint)
-bun run lint:fix         # auto-fix
-bun run typecheck        # tsc --noEmit
-bun run dev              # wrangler dev (local)
-bun run deploy           # wrangler deploy
+make build             # compile → ./bin/neptune
+make dev               # hot reload (requires `air`)
+make test              # go test ./...
+make lint              # golangci-lint run ./...
+make vet               # go vet ./...
+make generate          # templ generate (run after editing *.templ files)
+make build-prod        # Linux amd64 static binary (CGO_ENABLED=0)
+make deploy            # rsync + systemctl restart (needs DEPLOY_HOST)
+make setup             # initial VPS setup (run once, needs DEPLOY_HOST + DOMAIN)
+make webhook           # register Telegram webhook (needs DOMAIN + WEBHOOK_SECRET)
+make e2e               # end-to-end tests (needs BASE_URL)
 ```
 
-No test suite exists. Verify changes with `lint` + `typecheck` only.
+### Before building or committing
+
+```bash
+make generate          # if any *.templ files changed
+make lint              # golangci-lint (NOT ESLint/Biome)
+make vet               # go vet
+go build ./...         # verify compilation
+```
+
+There is no CI — these checks are manual.
+
+## Environment variables
+
+Loaded from `.env` (gitignored). Required:
+
+| Variable | Purpose |
+|----------|---------|
+| `BOT_TOKEN` | Telegram bot token (required, exits if missing) |
+| `BOT_USERNAME` | Bot username without `@` — used for `command@username` handler registration |
+| `MIMO_API_KEY` | Xiaomi MiMo V2.5 API key for AI chat |
+| `GITHUB_WEBHOOK_SECRET` | HMAC-SHA256 secret for GitHub webhook + `/set-webhook` auth |
+| `RELEASE_CHANNEL_ID` | Telegram channel ID for GitHub release notifications |
+| `REUSE_CAPTCHA` | `"true"` to reuse captcha images across users |
+| `LISTEN_ADDR` | HTTP listen address (default `:8080`) |
+| `DB_PATH` | SQLite database path (default `data/neptune.db`) |
+| `DATA_DIR` | Data directory root (default `./data`) |
 
 ## Key constraints
 
-- Package manager is **Bun** (no npm/yarn lockfiles).
-- Linter/formatter is **Biome** (not ESLint/Prettier). Uses **tabs** and **double quotes**.
-- `wrangler.toml` is **gitignored** — `wrangler.example.toml` is the template. D1 database_id, R2 bucket_name, and KV id must be filled in.
-- Secrets via `wrangler secret put`: `BOT_TOKEN`, `MIMO_API_KEY`, `GITHUB_WEBHOOK_SECRET`.
-- Wrangler doesn't support Bun runtime directly; use `bunx wrangler` (macOS 13.5+) or `--remote` flag.
-- Deploy requires running `/set-webhook?token=<GITHUB_WEBHOOK_SECRET>` on the worker URL to register the Telegram webhook and sync BotFather command list.
-- New commands must be added to the `setMyCommands` array in `src/index.ts`.
-- `/test` endpoint requires `Authorization: Bearer <GITHUB_WEBHOOK_SECRET>` header.
-
-## Bindings vs Env interface
-
-`wrangler.toml` bindings and `src/types.ts` Env must stay in sync:
-
-| wrangler.toml binding | Env field      | Type           |
-|-----------------------|---------------|----------------|
-| `db`                  | `env.db`      | `D1Database`   |
-| `captcha`             | `env.captcha` | `R2Bucket`     |
-| `aiContext`           | `env.aiContext` | `KVNamespace` |
-
-Optional env vars: `REUSE_CAPTCHA` (`"true"` to enable captcha reuse up to 10 times), `RELEASE_CHANNEL_ID` (Telegram channel ID for GitHub release notifications).
-
-## Database
-
-- Schema: `src/shared/db/schema.sql` — apply with `wrangler d1 execute neptune --remote --file=src/shared/db/schema.sql`
-- Queries: `src/shared/db/queries.ts` — all DB access goes through this file
-- Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`, `warnings`, `reports`
-- Migrations in `migrations/` — apply manually with `wrangler d1 execute <name> --remote --file=migrations/<file>.sql` (no auto-migration on deploy)
-- `schema.sql` must be updated alongside any migration file — fresh deploys use `schema.sql` only
+- **Go modules** (`go.mod` / `go.sum`), module path: `github.com/kazumi-group/neptune`
+- **Linter**: golangci-lint. **Formatter**: `go fmt` (tabs).
+- **Templ**: `*.templ` files must be compiled with `make generate` before building. Generated `*_templ.go` files are gitignored.
+- **SQLite**: `modernc.org/sqlite` (pure Go, no CGO), WAL mode, `data/neptune.db`
+- **Bot framework**: `github.com/go-telegram/bot` (not grammy)
+- **HTTP router**: `github.com/go-chi/chi/v5` for admin panel; standard `net/http` mux for main server
+- **Admin panel**: `github.com/a-h/templ` templates + HTMX frontend (no JS framework)
+- **Deployment**: systemd service + Nginx reverse proxy
+- **Env**: `.env` file (not `wrangler.toml`), secrets via environment variables
 
 ## Architecture
 
-**Feature-Driven Development**: each feature is a self-contained directory under `src/features/` with its own commands, handlers, and registration. Shared code goes in `src/shared/`.
+Standard Go server layout: `internal/` enforced private by compiler, `cmd/` for entry points.
 
-```
-src/
-├── index.ts              # Workers fetch handler: /webhook, /set-webhook, /test, /github-webhook, /admin
-├── bot.ts                # createBot(env) — calls registerFeatures()
-├── types.ts              # Env interface + data models
-├── features/
-│   ├── index.ts          # registerFeatures() — central wiring
-│   ├── message-orchestrator.ts  # dispatches DM→captcha, group→AI→keywords
-│   ├── admin/            # /id, /connect, /switch
-│   ├── help/             # /help
-│   ├── ping/             # /ping
-│   ├── rule/             # /rule
-│   ├── welcome/          # /setwelcome, join event handler
-│   ├── verify/           # /setverifybutton, /testverify, /start verify, captcha
-│   ├── keywords/         # /addkeyword, keyword matching handler
-│   ├── ai-chat/          # AI chat (MiMo API, skills, context)
-│   ├── votekick/         # /kick, vote callback handler
-│   ├── report/           # /report — group members report messages
-│   ├── warn/             # /warn — admins warn users
-│   ├── admin-panel/      # Web admin panel (/admin) with modular API
-│   └── github-release/   # GitHub webhook → Telegram
-├── shared/
-│   ├── db/               # schema.sql + queries.ts
-│   └── utils/            # botInfo, captcha, markdown, nickname, permissions, placeholders, reply, resolve-group
-└── migrations/           # D1 migration files
-```
+**Entry point**: `cmd/neptune/main.go` — HTTP server on `:8080`, mounts `/webhook`, `/admin/`, `/github-webhook`, `/set-webhook`, `/health`. Graceful shutdown on SIGINT/SIGTERM.
 
-Entry point is `src/index.ts` (`main` in wrangler.toml). Bot instance created per-request via `createBot(env)`.
+**Handler registration**: `internal/bot/bot.go` — `registerCommand()` helper registers both `cmd` and `cmd@username` variants. Orchestrator is the default (catch-all) handler.
 
-Each feature folder contains:
-- `commands.ts` — slash command handlers
-- `handlers.ts` — event/callback handlers
-- `index.ts` — registers the feature (`registerXxxFeature(bot, db, ...)`)
-- Internal utils (e.g. `vote.ts`, `skills.ts`) when feature-specific
+**Adding a new feature**:
+1. Create handler in `internal/handler/<name>.go`
+2. Register in `internal/bot/bot.go` (`registerCommand` or `RegisterHandler` for callbacks)
+3. If new DB table: add to `internal/db/schema.go`, create migration in `migrations/`, add queries in `internal/db/queries.go`
+4. Run `make generate` if templ files changed, then `make lint && make vet`
 
-### Adding a new feature
+## Database
 
-1. Create `src/features/<name>/` with `commands.ts`, `handlers.ts` (if needed), `index.ts`
-2. Export `registerXxxFeature(bot, db, ...)` from `index.ts`
-3. Call it in `src/features/index.ts`
-4. Add command to `setMyCommands` in `src/index.ts`
-5. If new DB table: add to `schema.sql`, create migration in `migrations/`, add queries in `queries.ts`
-6. Update README command list
+- **Schema**: `internal/db/schema.go` — applied automatically on startup via `ApplySchema()`
+- **Migrations**: `migrations/*.sql` — tracked in `schema_migrations` table via `ApplyMigrations()`
+- **Queries**: `internal/db/queries.go` — all DB access through `DB` struct methods
+- **Tables**: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`, `warnings`, `reports`, `locks`, `kv`, `schema_migrations`
 
-### Admin panel modules
+## AI chat
 
-`src/features/admin-panel/` uses a modular pattern. Each module implements `AdminPanelModule` interface:
-- `id`, `label`, `icon` — identity
-- `apiPrefix` — route prefix (e.g. `/admin/api/reports`)
-- `registerRoutes(routes, getEnv)` — registers API handlers
-
-Add new modules in `src/features/admin-panel/modules/` and register in `index.ts`'s `modules` array.
-
-## AI chat feature
-
-- Triggered by @mention of the bot or replying to the bot's messages in groups.
-- Uses Xiaomi MiMo V2.5 API (`https://token-plan-sgp.xiaomimimo.com/v1`).
-- Context stored in KV (`aiContext`) as `ai:context:{groupId}`, limited to 50 messages (pruned by timestamp and count). KV TTL is 8 days as safety net.
-- Daily usage tracked in D1 `ai_chat_usage` table (15/day per user, admins exempt).
-- System prompt (Neptune persona) is in `src/features/ai-chat/system-prompt.json`, rendered by `systemPromptToText()`.
-- API call has 25s timeout via AbortController, retries up to 2 times on 429/5xx errors.
-- `shouldTriggerAi()` in `src/features/ai-chat/ai-chat.ts` filters out replies to system messages using a keyword list — update this list if new bot message types are added.
+- Triggered by @mention or replying to bot messages in groups
+- MiMo API: `POST https://token-plan-sgp.xiaomimimo.com/v1/chat/completions`, model `mimo-v2.5`
+- **Header**: `api-key` (NOT `Authorization: Bearer`)
+- Context in SQLite `kv` table as `ai:context:{groupId}`, limited to 50 messages (7-day window)
+- Daily usage: 15/day per user, admins exempt (`ai_chat_usage` table)
+- System prompt: `internal/handler/data/system-prompt.json` (embedded via `//go:embed`)
+- API timeout 25s via `context.WithTimeout`, retries up to 2 times on 429/5xx
+- `ShouldTriggerAi()` filters replies to system messages using keyword list
+- Typing indicator: goroutine + `context.WithCancel` (not polling)
+- Single-process mutex (`aiContextMu sync.Mutex`) replaces distributed lock
 
 ## GitHub Release webhook
 
-- Endpoint: `POST /github-webhook` in `src/index.ts`
-- Receives GitHub `release` events, verifies `X-Hub-Signature-256` (HMAC-SHA256), sends formatted release note to Telegram channel
-- Only processes `action: "published"` (ignores `created`, `edited`, `prereleased`, `draft`)
-- GFM → MarkdownV2 conversion in `src/features/github-release/github-release.ts`: code blocks protected, links preserved, headings→bold, list markers (`- * +`)→`⦁`, GitHub callouts (`[!NOTE]` etc.) stripped, blockquotes→Telegram `>text`
-- `!` is reserved in Telegram MarkdownV2 — callout markers like `[!Note]` must be stripped before escaping, otherwise send fails with 400
-- GitHub webhook payload uses `\r\n` line endings — normalized to `\n` before regex processing
+- Endpoint: `POST /github-webhook` in `cmd/neptune/main.go`
+- Verifies `X-Hub-Signature-256` (HMAC-SHA256)
+- Only processes `action: "published"`
+- GFM → MarkdownV2 conversion in `internal/github/release.go`
+- `!` is reserved in Telegram MarkdownV2 — callout markers like `[!Note]` must be stripped before escaping
+- GitHub webhook payload uses `\r\n` — normalized to `\n` before processing
 
 ## Permission model
 
-- Admin commands check `checkAdminPermission()` in `src/shared/utils/permissions.ts`
-- In groups: checks Telegram `administrator`/`creator` status via `getChatMember`
-- In private chat: checks `admin_connections` table (bound via `/connect`)
+- `CheckAdminPermission()` in `internal/util/permission.go`
+- Groups: checks Telegram `administrator`/`creator` via `GetChatMember`
+- Private chat: checks `admin_connections` table (bound via `/connect`)
 - `/id` in a group auto-connects the user as admin
-- `/connect <groupId>` in private chat verifies Telegram admin status before binding
 
 ## Keyword matching
 
-- Uses `chinese-conv` package (`sify()`) for traditional/simplified Chinese normalization — both keyword and regex patterns match across traditional ↔ simplified automatically
-- Regex patterns are compiled once and cached in `keywordCache` (60s TTL) as `RegExp` objects
-- `/addregex` validates regex length (≤200 chars) and runs a complexity test (100ms threshold) to prevent ReDoS
+- `github.com/liuzl/gocc` for traditional/simplified Chinese normalization
+- Regex patterns cached with 60s TTL
+- `/addregex` validates length (≤200 chars) and runs complexity test (100ms threshold) to prevent ReDoS
 
 ## Conventions
 
-- Reply helpers in `src/shared/utils/reply.ts` — `replyOptions(ctx)` and `replyOptionsWithParse(ctx)` (Markdown mode)
-- `escapeMarkdown()` escapes all Telegram MarkdownV2 special chars
-- Placeholder replacement: `{nickname}`, `{userid}`, `{groupname}` in `src/shared/utils/placeholders.ts`
-- `getNickname(user)` in `src/shared/utils/nickname.ts` — use this instead of inline `first_name + last_name` concatenation
-- `buildVoteText()` and `VOTE_THRESHOLD` in `src/features/votekick/vote.ts` — shared by votekick command and handler
-- Captcha images stored as BMP in R2 at key `captcha/{groupId}/{userId}.bmp`, 5 attempts max before lockout
-- `/rule` command sets group rules shown during verification flow (10s reading time enforced via `rule_ack` callback)
-- Dependencies: `grammy` (bot framework), `chinese-conv` (繁简转换)
+- Reply helpers: `internal/util/reply.go` → `ReplyOptions()`
+- MarkdownV2 escaping: `internal/util/markdown.go` → `EscapeMarkdownV2()`
+- Placeholders: `{nickname}`, `{userid}`, `{groupname}` in `internal/util/placeholder.go`
+- `GetNickname(user)` in `internal/util/nickname.go`
+- Captcha: BMP in `data/captcha/{groupId}/{userId}.bmp`, 5 attempts max before lockout
+- `/rule` sets group rules shown during verification (10s reading time via `rule_ack` callback)
+- Orchestrator dispatch: DM → captcha reply → group AI → keyword match (in `handler/orchestrator.go`)
+
+## Deployment
+
+Full guide in [DEPLOY.md](DEPLOY.md). `make help` shows the quickstart.
+
+```bash
+make setup DEPLOY_HOST=root@your-server DOMAIN=bot.example.com  # init server
+make deploy DEPLOY_HOST=user@your-server                         # daily deploy
+make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=your-secret   # register webhook
+```
+
+Prerequisites: Debian/Ubuntu VPS, domain pointing to server, `BOT_TOKEN` + `BOT_USERNAME` + `MIMO_API_KEY`.

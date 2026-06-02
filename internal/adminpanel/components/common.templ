@@ -1,0 +1,95 @@
+package components
+
+import "fmt"
+
+templ Toast(message, toastType string) {
+	<div
+		class={ "fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 bg-neutral-900 border rounded-lg text-sm font-medium shadow-2xl shadow-black/50 toast-enter", toastColorClass(toastType) }
+	>
+		{ message }
+	</div>
+}
+
+func toastColorClass(t string) string {
+	switch t {
+	case "success":
+		return "border-green-500/30 text-green-400"
+	case "warning":
+		return "border-yellow-500/30 text-yellow-400"
+	default:
+		return "border-red-500/30 text-red-400"
+	}
+}
+
+templ EmptyState(icon, message string) {
+	<div class="island bg-neutral-950 border border-white/10 rounded-2xl p-8 text-center">
+		<div class="text-4xl mb-3">{ icon }</div>
+		<p class="text-neutral-600 text-sm">{ message }</p>
+	</div>
+}
+
+templ Spinner() {
+	<div class="flex items-center justify-center gap-3 py-16 text-neutral-600 text-sm">
+		<div class="spinner"></div>
+		加载中...
+	</div>
+}
+
+templ StatusBadge(status string) {
+	<span class={ "inline-block px-2.5 py-0.5 rounded-full text-xs font-medium", badgeClass(status) }>
+		{ badgeLabel(status) }
+	</span>
+}
+
+func badgeClass(status string) string {
+	switch status {
+	case "pending":
+		return "bg-yellow-500/10 text-yellow-400"
+	case "approved":
+		return "bg-green-500/10 text-green-400"
+	default:
+		return "bg-neutral-500/10 text-neutral-400"
+	}
+}
+
+func badgeLabel(status string) string {
+	switch status {
+	case "pending":
+		return "待处理"
+	case "approved":
+		return "已通过"
+	case "dismissed":
+		return "已驳回"
+	default:
+		return status
+	}
+}
+
+templ FilterButtons(current string, filters []FilterOption) {
+	<div class="island bg-neutral-950 border border-white/10 rounded-2xl p-5 mb-4">
+		<div class="flex flex-wrap gap-2">
+			for _, f := range filters {
+				<button
+					class={ "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors", filterBtnClass(current, f.Key) }
+					hx-get={ fmt.Sprintf("/admin/api/reports?status=%s", f.Key) }
+					hx-target="#report-list"
+					hx-swap="innerHTML"
+				>
+					{ f.Label }
+				</button>
+			}
+		</div>
+	</div>
+}
+
+type FilterOption struct {
+	Key   string
+	Label string
+}
+
+func filterBtnClass(current, key string) string {
+	if current == key {
+		return "bg-white text-black border-white"
+	}
+	return "border-white/15 text-neutral-400 hover:text-white hover:border-white/30"
+}

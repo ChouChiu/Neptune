@@ -2,17 +2,12 @@
 
 感谢你对 Neptune 项目的关注！我们欢迎任何形式的贡献。
 
-> **开发模式：Feature-Driven（功能驱动开发）**
-> 
-> 本项目采用 Feature-Driven 架构，每个功能作为独立模块存在于 `src/features/` 下，包含自身的命令、事件处理和注册逻辑。新增功能时请遵循此模式。
-
 ## 目录
 
 - [行为准则](#行为准则)
 - [如何贡献](#如何贡献)
 - [开发环境](#开发环境)
 - [项目架构](#项目架构)
-- [功能驱动开发](#功能驱动开发)
 - [开发指南](#开发指南)
 - [代码规范](#代码规范)
 - [提交规范](#提交规范)
@@ -32,7 +27,7 @@
    - 清晰的标题和描述
    - 复现步骤
    - 期望行为与实际行为
-   - 运行环境信息（OS、Bun 版本等）
+   - 运行环境信息（OS、Go 版本等）
 
 ### 提交功能建议
 
@@ -51,267 +46,152 @@
 
 ### 前置条件
 
-- [Bun](https://bun.sh)（包管理 & 运行时）
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)（`bunx wrangler`）
-- Cloudflare 账号
+- [Go 1.26+](https://go.dev/dl/)
+- [templ](https://templ.dev)（模板代码生成）
+- [golangci-lint](https://golangci-lint.run)（静态分析）
+- [air](https://github.com/air-verse/air)（可选，热重载）
 
 ### 初始化
 
 ```bash
-# 克隆项目
-git clone https://github.com/ChouChiu/Neptune.git
+git clone https://github.com/kazumi-group/neptune.git
 cd neptune
-
-# 安装依赖
-bun install
-
-# 复制配置文件
-cp wrangler.example.toml wrangler.toml
-```
-
-### 创建 Cloudflare 资源
-
-```bash
-# 创建 D1 数据库，将输出的 database_id 填入 wrangler.toml
-bunx wrangler d1 create neptune
-
-# 创建 R2 Bucket（存储验证码图片）
-bunx wrangler r2 bucket create neptune-captcha
-
-# 创建 KV 命名空间（AI 聊天上下文），将输出的 id 填入 wrangler.toml
-bunx wrangler kv namespace create aiContext
-```
-
-### 初始化数据库
-
-```bash
-bunx wrangler d1 execute neptune --remote --file=src/shared/db/schema.sql
-bunx wrangler d1 execute neptune --remote --file=migrations/003_ai_chat_usage.sql
-bunx wrangler d1 execute neptune --remote --file=migrations/004_rule.sql
-bunx wrangler d1 execute neptune --remote --file=migrations/005_captcha_attempts.sql
-bunx wrangler d1 execute neptune --remote --file=migrations/006_indexes.sql
-bunx wrangler d1 execute neptune --remote --file=migrations/007_report_message_text.sql
-```
-
-> 注意：`schema.sql` 已包含所有表的最新定义，新部署直接用 `schema.sql` 即可。迁移文件仅用于已有数据库的增量更新。
-
-### 配置 Secrets
-
-Secrets 通过 Wrangler 管理，**不要**写入 `wrangler.toml`：
-
-```bash
-echo "YOUR_BOT_TOKEN" | bunx wrangler secret put BOT_TOKEN
-echo "YOUR_MIMO_API_KEY" | bunx wrangler secret put MIMO_API_KEY
-echo "YOUR_GITHUB_WEBHOOK_SECRET" | bunx wrangler secret put GITHUB_WEBHOOK_SECRET
+go mod download
+cp .env.example .env  # 编辑填入 secrets
+make generate         # 生成 templ 模板代码
+make build            # 编译
 ```
 
 ### 本地开发
 
 ```bash
-bun run dev           # 启动本地开发服务器（wrangler dev）
-bun run lint          # Biome 代码检查
-bun run lint:fix      # 自动修复 lint 问题
-bun run typecheck     # TypeScript 类型检查
+make dev              # air 热重载（需要安装 air）
+make build            # 编译 → ./bin/neptune
+make test             # go test ./...
+make lint             # golangci-lint
+make vet              # go vet
 ```
-
-本地测试 Telegram Webhook 可使用 [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) 或 [ngrok](https://ngrok.com/) 将本地服务暴露到公网。
 
 ## 项目架构
 
+**标准 Go Server 布局**：`internal/` 由编译器强制私有，`cmd/` 为入口。
+
 ```
-src/
-├── index.ts              # Workers 入口：路由 /webhook, /set-webhook, /test, /github-webhook, /admin
-├── bot.ts                # createBot(env) —— 调用 registerFeatures()
-├── types.ts              # Env 接口 + 数据模型定义
-├── features/             # 按功能模块组织（Feature-Driven）
-│   ├── index.ts          # registerFeatures() 统一注册所有功能
-│   ├── message-orchestrator.ts  # 消息分发：DM→验证码, 群组→AI→关键词
-│   ├── admin/            # /id, /connect, /switch
-│   ├── help/             # /help
-│   ├── ping/             # /ping
-│   ├── rule/             # /rule（群规管理）
-│   ├── welcome/          # /setwelcome, 入群事件处理
-│   ├── verify/           # /setverifybutton, /testverify, /start verify, 验证码流程
-│   ├── keywords/         # /addkeyword, 关键词匹配处理
-│   ├── ai-chat/          # AI 聊天（MiMo API, skills, 上下文管理）
-│   ├── votekick/         # /kick, 投票回调处理
-│   ├── report/           # /report 群成员举报
-│   ├── warn/             # /warn 管理员警告
-│   ├── admin-panel/      # Web 管理面板（认证、举报审核、警告管理）
-│   └── github-release/   # GitHub webhook → Telegram
-├── shared/               # 跨功能共享代码
-│   ├── db/               # schema.sql + queries.ts（唯一 DB 访问入口）
-│   └── utils/            # botInfo, captcha, markdown, nickname, permissions, placeholders, reply, resolve-group
-└── migrations/           # 数据库迁移文件
+cmd/neptune/main.go           # 入口：HTTP server + bot 初始化 + graceful shutdown
+internal/
+├── bot/bot.go                # Bot 创建、handler 注册
+├── bot/middleware.go         # 日志、recovery、群组初始化中间件
+├── handler/                  # 所有命令 + 回调 handler
+│   ├── orchestrator.go       # 消息分发：DM→验证码, 群组→AI→关键词
+│   ├── data/                 # 嵌入式 JSON（system-prompt, skills）
+│   └── ...                   # 各功能 handler
+├── adminpanel/               # Web 管理面板（Chi + Templ + HTMX）
+│   ├── server.go             # Chi 路由注册
+│   ├── auth.go               # Telegram Login Widget + HMAC session
+│   ├── handler/              # API handler（reports, warnings）
+│   └── components/           # Templ 模板
+├── github/release.go         # GitHub webhook + GFM→MarkdownV2
+├── db/                       # SQLite 数据库层
+├── model/                    # 数据结构体
+└── util/                     # 共享工具函数
+migrations/                   # SQL 迁移文件
+deploy/                       # 部署脚本 + 配置
 ```
 
-每个功能文件夹包含：
-- `commands.ts` — 斜杠命令处理
-- `handlers.ts` — 事件/回调处理
-- `index.ts` — 注册该功能（`registerXxxFeature(bot, db, ...)`）
-- 内部工具（如 `vote.ts`, `skills.ts`）仅当功能特有时
+### 数据库
 
-### 数据库表
+- **SQLite**（`modernc.org/sqlite`，纯 Go 无 CGO），WAL 模式
+- Schema：`internal/db/schema.go` — 启动时自动执行 `ApplySchema()`
+- 迁移：`migrations/*.sql` — 通过 `ApplyMigrations()` 按 `schema_migrations` 表追踪
+- 查询：`internal/db/queries.go` — 所有 DB 访问通过 `DB` 结构体方法
 
-| 表名 | 用途 |
+### 关键依赖
+
+| 依赖 | 用途 |
 |------|------|
-| `groups` | 群组配置（欢迎、验证、群规、投票踢人开关等） |
-| `keywords` | 关键词/正则自动回复规则 |
-| `admin_connections` | 管理员与群组的绑定关系 |
-| `admin_current_group` | 管理员当前选中的群组 |
-| `pending_verifications` | 待验证用户（验证码、过期时间、尝试次数） |
-| `active_votes` | 进行中的投票踢人 |
-| `vote_records` | 投票记录 |
-| `ai_chat_usage` | AI 聊天每日用量统计 |
-| `warnings` | 用户警告记录（管理员 `/warn` 或举报通过时生成） |
-| `reports` | 举报记录（群成员 `/report` 提交，管理员 Web 面板审核） |
-
-## 功能驱动开发
-
-本项目采用 **Feature-Driven Development（FDD）** 架构模式。核心原则：
-
-1. **功能即目录** — 每个功能是 `src/features/` 下的独立目录，包含该功能的所有逻辑
-2. **自包含** — 命令、事件处理、内部工具均封装在功能目录内
-3. **统一注册** — 每个功能通过 `index.ts` 导出 `registerXxxFeature()`，由 `src/features/index.ts` 统一调用
-4. **共享下沉** — 跨功能复用的代码（DB 访问、工具函数）放在 `src/shared/`
-
-### 新增功能清单
-
-当新增一个功能时，需要完成以下步骤：
-
-1. 创建 `src/features/<feature-name>/` 目录
-2. 编写 `commands.ts`（斜杠命令）和/或 `handlers.ts`（事件/回调）
-3. 编写 `index.ts` 导出注册函数
-4. 在 `src/features/index.ts` 中调用注册函数
-5. 在 `src/index.ts` 的 `setMyCommands` 中添加命令描述
-6. 如需新表，在 `src/shared/db/schema.sql` 中添加，并在 `migrations/` 创建迁移文件
-7. 在 `src/shared/db/queries.ts` 中添加查询函数
-8. 更新 README 命令列表
+| `github.com/go-telegram/bot` | Telegram Bot API（webhook + middleware） |
+| `github.com/go-chi/chi/v5` | Admin panel HTTP 路由 |
+| `github.com/a-h/templ` | 编译时模板引擎（admin panel） |
+| `modernc.org/sqlite` | 纯 Go SQLite 驱动 |
+| `github.com/liuzl/gocc` | 繁简中文转换 |
 
 ## 开发指南
 
-### 添加新命令
+### 添加新功能
 
-按照 [功能驱动开发](#功能驱动开发) 清单操作。基本步骤：
-
-1. 在 `src/features/` 下对应功能文件夹中创建或编辑 `commands.ts`：
-
-```typescript
-import type { Bot } from "grammy";
-import type { D1Database } from "@cloudflare/workers-types";
-import { replyOptions } from "../../shared/utils/reply";
-
-export function registerMyCommands(bot: Bot, db: D1Database): void {
-	bot.command("mycommand", async (ctx) => {
-		// 命令逻辑
-		await ctx.reply("Hello!", replyOptions(ctx));
-	});
-}
-```
-
-2. 在功能文件夹的 `index.ts` 中注册：
-
-```typescript
-import type { Bot } from "grammy";
-import { registerMyCommands } from "./commands";
-
-export function registerMyFeature(bot: Bot, db: D1Database): void {
-	registerMyCommands(bot, db);
-}
-```
-
-3. 在 `src/features/index.ts` 中添加 `registerMyFeature` 调用。
-4. 在 `src/index.ts` 的 `setMyCommands` 中添加命令描述（用于 `/set-webhook` 同步到 BotFather）。
-
-> 重要：`/set-webhook` 需要 `?token=<GITHUB_WEBHOOK_SECRET>` 认证，新命令添加后需重新访问该 URL 同步。
+1. 在 `internal/handler/` 下创建 `<name>.go`
+2. 在 `internal/bot/bot.go` 中注册命令或回调
+3. 如果需要新数据库表：
+   - 在 `internal/db/schema.go` 中添加表定义
+   - 在 `migrations/` 下创建迁移文件（命名格式：`NNN_description.sql`）
+   - 在 `internal/db/queries.go` 中添加查询函数
+4. 运行 `make generate`（如果有 templ 文件变更）
+5. 运行 `make lint && make vet` 确保通过
+6. 更新 README 命令列表
 
 ### 添加管理员命令
 
-使用 `checkAdminPermission()` 检查权限：
+使用 `CheckAdminPermission()` 检查权限：
 
-```typescript
-import { checkAdminPermission } from "../../shared/utils/permissions";
-
-bot.command("adminonly", async (ctx) => {
-	const { allowed, groupId } = await checkAdminPermission(db, ctx);
-	if (!allowed) {
-		await ctx.reply("仅管理员可用", replyOptions(ctx));
-		return;
-	}
-	// 使用 groupId 执行操作
-});
+```go
+func MyAdminCommand(database *db.DB) handler.HandlerFunc {
+    return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+        allowed, groupId, err := util.CheckAdminPermission(database, update)
+        if !allowed {
+            // 回复无权限
+            return
+        }
+        // 使用 groupId 执行操作
+    }
+}
 ```
+
+### Admin Panel 模块
+
+`internal/adminpanel/` 使用 Chi + Templ + HTMX：
+
+- `server.go` — 路由注册
+- `auth.go` — Telegram Login Widget HMAC-SHA256 验证 + session cookie
+- `handler/` — API 端点返回 HTML fragment（Templ 渲染）
+- `components/` — Templ 模板
+
+添加新管理面板模块：在 `internal/adminpanel/handler/` 下创建 handler，在 `server.go` 中注册路由。
+
+### Templ 模板
+
+`*.templ` 文件必须先编译才能构建：
+
+```bash
+make generate          # templ generate（生成 *_templ.go 文件）
+```
+
+生成的 `*_templ.go` 文件已 gitignored，每次修改 `.templ` 文件后需重新生成。
 
 ### 数据库迁移
 
 1. 在 `migrations/` 下创建迁移文件，命名格式：`NNN_description.sql`
-2. 编写 SQL（参考 `src/shared/db/schema.sql` 中的表结构）
-3. 在 `src/shared/db/queries.ts` 中添加对应的查询函数
-4. 部署后手动执行迁移：
+2. 编写 SQL（参考 `internal/db/schema.go` 中的表结构）
+3. 在 `internal/db/queries.go` 中添加对应的查询函数
+4. 迁移在启动时自动执行（通过 `ApplyMigrations()`）
 
-```bash
-bunx wrangler d1 execute neptune --remote --file=migrations/NNN_description.sql
-```
-
-> 注意：没有自动迁移机制，所有迁移必须手动执行。
-
-### Web 管理面板
-
-管理面板位于 `src/features/admin-panel/`，采用模块化设计：
-
-```
-admin-panel/
-├── index.ts          # 路由入口（/admin, /admin/auth/*）
-├── auth.ts           # Telegram Login Widget 认证（签名/验证 session）
-├── types.ts          # AdminPanelModule 接口定义
-├── html/             # 前端 HTML（layout、样式、脚本）
-└── modules/          # 功能模块
-    ├── reports.ts    # 举报管理 API（/admin/api/reports）
-    └── warnings.ts   # 警告管理 API（admin/api/warnings）
-```
-
-**添加新的管理面板模块：**
-
-1. 在 `src/features/admin-panel/modules/` 下创建模块文件
-2. 实现 `AdminPanelModule` 接口（`id`, `label`, `icon`, `apiPrefix`, `registerRoutes`）
-3. 在 `src/features/admin-panel/index.ts` 的 `modules` 数组中注册
-
-### AI 聊天功能
-
-- 触发方式：@机器人 或回复机器人消息
-- 系统提示词（Neptune 人格）在 `src/features/ai-chat/system-prompt.json`，由 `systemPromptToText()` 渲染
-- 上下文存储在 KV（`aiContext`），按 `ai:context:{groupId}` 键存储，限制最近 50 条消息（7 天窗口）
-- API 调用有 25 秒超时（AbortController），429/5xx 错误自动重试最多 2 次
-- 每日用量限制：普通用户 15 次/天，管理员不限（记录在 `ai_chat_usage` 表）
-- `shouldTriggerAi()` 中有过滤系统消息的关键词列表，新增 bot 消息类型时需同步更新
-
-### 关键词匹配
-
-- 使用 `chinese-conv`（`sify()`）自动处理繁简中文互匹配
-- 正则规则在 `keywordCache`（60s TTL）中编译为 `RegExp` 对象缓存
-- `/addregex` 会校验正则长度（≤200 字符）和复杂度（100ms 阈值），防止 ReDoS
-- 匹配逻辑在 `src/features/keywords/handlers.ts` 的 `matchKeyword()` 函数
-
-### 验证码与入群认证
-
-- 验证码为 5 位 BMP 图片，存储在 R2 `captcha/{groupId}/{userId}.bmp`
-- 暴力破解防护：`pending_verifications.attempts` 字段，5 次错误自动锁定
-- 支持验证码复用（`REUSE_CAPTCHA=true`），同一验证码最多复用 10 次
-- `/rule` 设置群规后，新成员入群需先阅读 10 秒才能开始验证
+> 注意：迁移通过 `schema_migrations` 表追踪，每个文件只执行一次。
 
 ## 代码规范
 
-- **Linter / Formatter**：Biome（不是 ESLint / Prettier）
-- **缩进**：Tab
-- **引号**：双引号
-- **导入排序**：Biome 自动整理（`organizeImports: "on"`）
+- **Linter**：golangci-lint（不是 ESLint / Biome）
+- **Formatter**：`go fmt`（tab 缩进）
+- **模板引擎**：templ（不是 JSX / EJS）
 
-提交前请确保两项检查均通过：
+提交前请确保检查均通过：
 
 ```bash
-bun run lint          # Biome 代码检查
-bun run typecheck     # TypeScript 类型检查
+make generate          # 如果修改了 *.templ 文件
+make lint              # golangci-lint
+make vet               # go vet
+go build ./...         # 确认编译通过
 ```
+
+> 注意：本项目没有 CI，以上检查需手动执行。
 
 ## 提交规范
 
@@ -340,12 +220,11 @@ docs: 更新 README 命令列表
 
 - PR 标题使用 Conventional Commits 格式
 - 一个 PR 只做一件事，保持精简
-- 确保 `bun run lint` 和 `bun run typecheck` 通过
+- 确保 `make lint` 和 `make vet` 通过
 - 如涉及新功能，请在 PR 描述中说明使用方式
-- 如涉及数据库变更，请在 `migrations/` 中添加迁移文件，并同步更新 `schema.sql`
-- 如涉及新命令，请同步更新 README 的命令列表和 `src/index.ts` 中的 `setMyCommands`
-- 如涉及新 bot 消息类型，请检查 `shouldTriggerAi()` 的系统消息关键词列表是否需要更新（`src/features/ai-chat/ai-chat.ts`）
-- 如涉及管理面板新模块，请参考 [Web 管理面板](#web-管理面板) 章节
+- 如涉及数据库变更，请在 `migrations/` 中添加迁移文件
+- 如涉及新命令，请同步更新 README 的命令列表
+- 如涉及管理面板新模块，请参考 [Admin Panel 模块](#admin-panel-模块) 章节
 
 ## License
 
