@@ -20,6 +20,14 @@ import (
 )
 
 func main() {
+	// Initialize log collector for admin panel
+	logCollector := adminpanel.NewLogCollector(500)
+
+	// Setup multi-handler: stdout + collector
+	stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+	collectorHandler := adminpanel.NewSlogHandler(logCollector)
+	multiHandler := adminpanel.NewMultiHandler(stdoutHandler, collectorHandler)
+	slog.SetDefault(slog.New(multiHandler))
 	// Load configuration from environment
 	cfg := &model.Config{
 		BotToken:            os.Getenv("BOT_TOKEN"),
@@ -88,7 +96,7 @@ func main() {
 	})
 
 	// Admin panel — ServeMux auto-redirects /admin → /admin/
-	adminHandler := adminpanel.NewServer(database, cfg.BotToken, cfg.BotUsername)
+	adminHandler := adminpanel.NewServer(database, cfg.BotToken, cfg.BotUsername, logCollector)
 	mux.Handle("/admin/", http.StripPrefix("/admin", adminHandler))
 
 	// GitHub webhook endpoint

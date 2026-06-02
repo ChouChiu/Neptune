@@ -262,7 +262,8 @@ templ PageScripts(botUsername string) {
 	// ── Sidebar & Sections ──
 	var SECTIONS = [
 		{ id: 'reports', label: '举报管理', icon: '✉️', url: '/admin/reports' },
-		{ id: 'warnings', label: '警告记录', icon: '⚠️', url: '/admin/warnings' }
+		{ id: 'warnings', label: '警告记录', icon: '⚠️', url: '/admin/warnings' },
+		{ id: 'logs', label: '实时日志', icon: '📋', url: '/admin/logs' }
 	];
 	var currentSection = null;
 
@@ -323,6 +324,8 @@ templ PageScripts(botUsername string) {
 			loadReportsSection(contentArea);
 		} else if (section.id === 'warnings') {
 			loadWarningsSection(contentArea);
+		} else if (section.id === 'logs') {
+			loadLogsSection(contentArea);
 		}
 	};
 
@@ -394,6 +397,151 @@ templ PageScripts(botUsername string) {
 			if (list) list.innerHTML = '<div class="text-center py-16 text-red-400 text-sm">加载失败</div>';
 		});
 	}
+
+	// ── Logs Section ──
+	var __logEventSource = null;
+	var __logAutoScroll = true;
+	var __logPaused = false;
+
+	function loadLogsSection(container) {
+		// Close previous SSE connection
+		if (__logEventSource) {
+			__logEventSource.close();
+			__logEventSource = null;
+		}
+		__logAutoScroll = true;
+		__logPaused = false;
+
+		container.innerHTML = '<div class="island bg-neutral-950 border border-white/10 rounded-2xl p-4 mb-4 flex items-center justify-between">' +
+			'<div class="flex items-center gap-3">' +
+				'<span id="log-status" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/20">' +
+					'<span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>连接中' +
+				'</span>' +
+				'<span id="log-count" class="text-xs text-neutral-500">0 条日志</span>' +
+			'</div>' +
+			'<div class="flex items-center gap-2">' +
+				'<button id="log-pause-btn" onclick="toggleLogPause()" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/15 text-neutral-400 hover:text-white hover:border-white/30 transition-colors">' +
+					'⏸ 暂停' +
+				'</button>' +
+				'<button onclick="clearLogs()" class="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/15 text-neutral-400 hover:text-white hover:border-white/30 transition-colors">' +
+					'🗑 清空' +
+				'</button>' +
+				'<label class="flex items-center gap-1.5 text-xs text-neutral-400 cursor-pointer">' +
+					'<input type="checkbox" id="log-autoscroll" checked onchange="toggleAutoScroll()" class="accent-white">' +
+					'自动滚动' +
+				'</label>' +
+			'</div>' +
+		'</div>' +
+		'<div id="log-container" class="island bg-neutral-950 border border-white/10 rounded-2xl p-4 h-[calc(100vh-220px)] overflow-y-auto font-mono text-xs leading-relaxed"></div>';
+
+		startLogStream();
+	}
+
+	function startLogStream() {
+		var statusEl = document.getElementById('log-status');
+		var container = document.getElementById('log-container');
+		if (!container) return;
+
+		var token = __sessionToken || '';
+		var url = '/admin/api/logs/stream?token=' + encodeURIComponent(token);
+		__logEventSource = new EventSource(url);
+
+		__logEventSource.onopen = function() {
+			if (statusEl) {
+				statusEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-500/15 text-green-400 border border-green-500/20';
+				statusEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>已连接';
+			}
+		};
+
+		__logEventSource.onmessage = function(e) {
+			if (__logPaused) return;
+			try {
+				var entry = JSON.parse(e.data);
+				appendLogEntry(container, entry);
+			} catch (_) {}
+		};
+
+		__logEventSource.onerror = function() {
+			if (statusEl) {
+				statusEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/15 text-red-400 border border-red-500/20';
+				statusEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>已断开';
+			}
+		};
+	}
+
+	function appendLogEntry(container, entry) {
+		var levelColors = {
+			'DEBUG': 'text-neutral-500',
+			'INFO': 'text-blue-400',
+			'WARN': 'text-yellow-400',
+			'ERROR': 'text-red-400'
+		};
+		var levelBgs = {
+			'DEBUG': '',
+			'INFO': '',
+			'WARN': 'bg-yellow-500/5',
+			'ERROR': 'bg-red-500/5'
+		};
+		var color = levelColors[entry.level] || 'text-neutral-400';
+		var bg = levelBgs[entry.level] || '';
+
+		var line = document.createElement('div');
+		line.className = 'flex gap-2 py-0.5 px-2 -mx-2 rounded ' + bg;
+		line.innerHTML = '<span class="text-neutral-600 shrink-0">' + esc(entry.time) + '</span>' +
+			'<span class="' + color + ' font-semibold w-12 shrink-0">' + esc(entry.level) + '</span>' +
+			'<span class="text-neutral-300 break-all">' + esc(entry.message) + '</span>' +
+			(entry.attrs ? '<span class="text-neutral-500 break-all">' + esc(entry.attrs) + '</span>' : '');
+
+		container.appendChild(line);
+
+		// Update count
+		var countEl = document.getElementById('log-count');
+		if (countEl) {
+			var lines = container.children.length;
+			countEl.textContent = lines + ' 条日志';
+		}
+
+		// Auto scroll
+		if (__logAutoScroll) {
+			container.scrollTop = container.scrollHeight;
+		}
+	}
+
+	function toggleLogPause() {
+		__logPaused = !__logPaused;
+		var btn = document.getElementById('log-pause-btn');
+		if (btn) {
+			btn.textContent = __logPaused ? '▶ 继续' : '⏸ 暂停';
+			btn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ' +
+				(__logPaused ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10' : 'border-white/15 text-neutral-400 hover:text-white hover:border-white/30');
+		}
+	}
+
+	function clearLogs() {
+		var container = document.getElementById('log-container');
+		if (container) {
+			container.innerHTML = '';
+			var countEl = document.getElementById('log-count');
+			if (countEl) countEl.textContent = '0 条日志';
+		}
+	}
+
+	function toggleAutoScroll() {
+		var checkbox = document.getElementById('log-autoscroll');
+		__logAutoScroll = checkbox ? checkbox.checked : true;
+		if (__logAutoScroll) {
+			var container = document.getElementById('log-container');
+			if (container) container.scrollTop = container.scrollHeight;
+		}
+	}
+
+	// Clean up SSE on page unload
+	window.addEventListener('beforeunload', function() {
+		if (__logEventSource) {
+			__logEventSource.close();
+			__logEventSource = null;
+		}
+	});
 
 	// ── Init ──
 	API.get('/admin/auth/me').then(function(text) {

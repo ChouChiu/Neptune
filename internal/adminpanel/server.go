@@ -15,7 +15,7 @@ import (
 )
 
 // NewServer creates a Chi router with all admin panel routes registered.
-func NewServer(database *db.DB, botToken, botUsername string) http.Handler {
+func NewServer(database *db.DB, botToken, botUsername string, logCollector *LogCollector) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.Compress(5))
@@ -36,6 +36,7 @@ func NewServer(database *db.DB, botToken, botUsername string) http.Handler {
 		r.Get("/api/reports", handler.ListReports(database))
 		r.Post("/api/reports/{reportID}/resolve", handler.ResolveReport(database, botToken))
 		r.Get("/api/warnings", handler.ListWarnings(database))
+		r.Get("/api/logs/stream", handleLogsStream(logCollector))
 	})
 
 	return r
@@ -169,3 +170,36 @@ var ErrInvalidID = errInvalidID{}
 type errInvalidID struct{}
 
 func (errInvalidID) Error() string { return "invalid ID" }
+
+// handleLogsStream returns an SSE handler that streams log entries.
+func handleLogsStream(collector *LogCollector) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		ch := collector.Subscribe()
+		defer collector.Unsubscribe(ch)
+
+		ctx := r.Context()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case entry, ok := <-ch:
+				if !ok {
+					return
+				}
+				data, _ := json.Marshal(entry)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+		}
+	}
+}
