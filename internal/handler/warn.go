@@ -52,13 +52,7 @@ func Warn(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		reason := ""
-		if update.Message.Text != "" {
-			cmd := "/warn"
-			if len(update.Message.Text) > len(cmd)+1 {
-				reason = update.Message.Text[len(cmd)+1:]
-			}
-		}
+		reason := util.CommandArgs(update.Message.Text, "/warn")
 		reason = trimSpace(reason)
 
 		if err := database.AddWarning(adminGroupID, target.ID, update.Message.From.ID, reason); err != nil {

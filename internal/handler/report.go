@@ -32,13 +32,7 @@ func Report(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		content := ""
-		if update.Message.Text != "" {
-			cmd := "/report"
-			if len(update.Message.Text) > len(cmd)+1 {
-				content = update.Message.Text[len(cmd)+1:]
-			}
-		}
+		content := util.CommandArgs(update.Message.Text, "/report")
 		content = trimSpace(content)
 
 		if content == "" {

@@ -105,8 +105,6 @@ func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 			Path:     "/",
 			MaxAge:   sessionTTL,
 			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
 		})
 
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user, "token": session})

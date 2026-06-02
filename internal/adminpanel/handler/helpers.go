@@ -13,13 +13,10 @@ import (
 	"github.com/kazumi-group/neptune/internal/model"
 )
 
-type contextKey string
-
-const userIDKey contextKey = "admin_user_id"
-
 // getUserID extracts the admin user ID from the request context.
+// Context key "admin_user_id" is set by adminpanel.SessionAuthMiddleware.
 func getUserID(r *http.Request) int64 {
-	if v, ok := r.Context().Value(userIDKey).(int64); ok {
+	if v, ok := r.Context().Value("admin_user_id").(int64); ok {
 		return v
 	}
 	return 0

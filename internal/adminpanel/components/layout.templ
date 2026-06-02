@@ -139,6 +139,9 @@ templ PageScripts(botUsername string) {
 			opts.credentials = 'same-origin';
 			if (__sessionToken) {
 				opts.headers = Object.assign({ 'Authorization': 'Bearer ' + __sessionToken }, opts.headers);
+				// Also send token as query param for reliability (some browsers/proxies strip headers)
+				var sep = url.indexOf('?') >= 0 ? '&' : '?';
+				url = url + sep + 'token=' + encodeURIComponent(__sessionToken);
 			}
 			if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
 				opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers);
