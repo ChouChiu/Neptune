@@ -64,11 +64,17 @@ type skillsData struct {
 }
 
 var (
-	systemPrompt string
-	defaultSkill skill
-	dynamicSkills []skill
-	aiContextMu  sync.Mutex // replaces distributed lock for single-process
+	systemPrompt    string
+	defaultSkill    skill
+	dynamicSkills   []skill
+	groupContextLocks sync.Map // map[int64]*sync.Mutex — per-group locks
 )
+
+// getGroupContextLock returns a per-group mutex for concurrent AI chat processing.
+func getGroupContextLock(groupID int64) *sync.Mutex {
+	lock, _ := groupContextLocks.LoadOrStore(groupID, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
 
 func init() {
 	// Parse system prompt
@@ -424,9 +430,10 @@ func GetChatResponse(database *db.DB, apiKey string, groupID int64, userID int64
 		}
 	}
 
-	// Single-process mutex replaces distributed lock
-	aiContextMu.Lock()
-	defer aiContextMu.Unlock()
+	// Per-group lock for concurrent processing across different groups
+	groupLock := getGroupContextLock(groupID)
+	groupLock.Lock()
+	defer groupLock.Unlock()
 
 	context, err := getAiContext(database, groupID)
 	if err != nil {
