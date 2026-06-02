@@ -25,6 +25,22 @@ func loggingMiddleware(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 				"data", update.CallbackQuery.Data,
 				"user_id", update.CallbackQuery.From.ID,
 			)
+		} else if update.ChatMember != nil {
+			slog.Info("ChatMember update",
+				"chat_id", update.ChatMember.Chat.ID,
+				"chat_type", update.ChatMember.Chat.Type,
+				"user_id", update.ChatMember.From.ID,
+				"old_status", update.ChatMember.OldChatMember.Type,
+				"new_status", update.ChatMember.NewChatMember.Type,
+			)
+		} else if update.MyChatMember != nil {
+			slog.Info("MyChatMember update",
+				"chat_id", update.MyChatMember.Chat.ID,
+				"chat_type", update.MyChatMember.Chat.Type,
+				"user_id", update.MyChatMember.From.ID,
+				"old_status", update.MyChatMember.OldChatMember.Type,
+				"new_status", update.MyChatMember.NewChatMember.Type,
+			)
 		}
 		next(ctx, b, update)
 	}

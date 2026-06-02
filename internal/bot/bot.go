@@ -86,9 +86,20 @@ func chatMemberJoinedMatch(update *models.Update) bool {
 		return false
 	}
 	cm := update.ChatMember
-	// Old status is left or kicked, new status is member
-	return (cm.OldChatMember.Type == models.ChatMemberTypeLeft || cm.OldChatMember.Type == models.ChatMemberTypeBanned) &&
-		cm.NewChatMember.Type == models.ChatMemberTypeMember
+
+	// Check if this is a new member join:
+	// Old status is NOT member/restricted (i.e., user was not in the group before)
+	// New status is member or restricted (i.e., user is now in the group)
+	oldStatus := cm.OldChatMember.Type
+	newStatus := cm.NewChatMember.Type
+
+	// User was not in the group before (left, banned, or unknown)
+	wasNotMember := oldStatus != models.ChatMemberTypeMember && oldStatus != models.ChatMemberTypeRestricted
+
+	// User is now in the group (member or restricted)
+	isNowMember := newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeRestricted
+
+	return wasNotMember && isNowMember
 }
 
 // SetCommands registers the bot command list with Telegram.

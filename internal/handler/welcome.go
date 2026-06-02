@@ -264,12 +264,30 @@ func WelcomeNewMembersFromChatMember(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		cm := update.ChatMember
+		slog.Info("WelcomeNewMembersFromChatMember triggered",
+			"chat_id", cm.Chat.ID,
+			"user_id", cm.From.ID,
+			"old_status", cm.OldChatMember.Type,
+			"new_status", cm.NewChatMember.Type,
+		)
 
-		// Check if this is a new member join (old status is left/kicked, new status is member)
-		isNewJoin := (cm.OldChatMember.Type == models.ChatMemberTypeLeft || cm.OldChatMember.Type == models.ChatMemberTypeBanned) &&
-			cm.NewChatMember.Type == models.ChatMemberTypeMember
+		// Check if this is a new member join:
+		// Old status is NOT member/restricted (i.e., user was not in the group before)
+		// New status is member or restricted (i.e., user is now in the group)
+		oldStatus := cm.OldChatMember.Type
+		newStatus := cm.NewChatMember.Type
 
-		if !isNewJoin {
+		// User was not in the group before (left, banned, or unknown)
+		wasNotMember := oldStatus != models.ChatMemberTypeMember && oldStatus != models.ChatMemberTypeRestricted
+
+		// User is now in the group (member or restricted)
+		isNowMember := newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeRestricted
+
+		if !(wasNotMember && isNowMember) {
+			slog.Info("Not a new join, skipping",
+				"was_not_member", wasNotMember,
+				"is_now_member", isNowMember,
+			)
 			return
 		}
 
@@ -286,14 +304,31 @@ func WelcomeNewMembersFromChatMember(database *db.DB) tgbot.HandlerFunc {
 
 		_ = database.CleanExpiredVerifications()
 
-		// Get user from NewChatMember.Member
+		// Get user from NewChatMember (could be Member or Restricted)
 		var newMember *models.User
-		if cm.NewChatMember.Member != nil {
-			newMember = cm.NewChatMember.Member.User
+		switch cm.NewChatMember.Type {
+		case models.ChatMemberTypeMember:
+			if cm.NewChatMember.Member != nil {
+				newMember = cm.NewChatMember.Member.User
+			}
+		case models.ChatMemberTypeRestricted:
+			if cm.NewChatMember.Restricted != nil {
+				newMember = cm.NewChatMember.Restricted.User
+			}
 		}
 		if newMember == nil {
+			slog.Warn("Could not get user from NewChatMember",
+				"chat_id", groupID,
+				"new_member_type", cm.NewChatMember.Type,
+			)
 			return
 		}
+
+		slog.Info("Processing new member from chat_member update",
+			"user_id", newMember.ID,
+			"nickname", newMember.FirstName,
+			"is_bot", newMember.IsBot,
+		)
 
 		if newMember.IsBot {
 			return
