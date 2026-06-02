@@ -688,3 +688,39 @@ Week 7-8    阶段 6  部署、数据迁移、端到端测试
 - [ ] 投票流程（待手动验证）
 
 **下一步**: 阶段 4 — 高级功能
+
+### 阶段 4：高级功能 ✅ 已完成
+
+**完成日期**: 2026-06-02
+
+| # | 任务 | 状态 | 备注 |
+|---|------|------|------|
+| 4.1 | `handler/ai_chat.go` | ✅ | MiMo API、上下文管理、技能匹配、shouldTriggerAi、typing 指示器 |
+| 4.2 | `handler/orchestrator.go` | ✅ | 集成 HandleAiChat，签名更新接受 Config |
+| 4.3 | `github/release.go` | ✅ | GitHub webhook 验证、GFM→MarkdownV2 转换、Telegram 发送 |
+
+**附加产出**:
+- `handler/data/system-prompt.json` — Neptune 人设数据（embed 嵌入）
+- `handler/data/skills.json` — 技能数据（embed 嵌入）
+- `cmd/neptune/main.go` — 新增 `/github-webhook` 端点
+- `bot/bot.go` — Orchestrator 签名更新，传入 Config
+- `handler/ai_chat.go` — 导出 `GetTodayDate`、`ShouldTriggerAi`、`GetChatResponse`、`GetBotID` 等函数
+
+**关键实现细节**:
+- `aiContextMu sync.Mutex` 替代分布式锁（单进程部署）
+- `sync.Mutex` 保护 AI 上下文读写（`getAiContext`/`updateAiContext`）
+- `startTypingIndicator` 使用 goroutine + `context.WithCancel`（非轮询）
+- `processAiChat` 在后台 goroutine 中执行（替代 `waitUntil`）
+- `sendAiReply` 先 MarkdownV2 失败回退纯文本
+- MiMo API 使用 `api-key` header（非 `Authorization: Bearer`）
+- 429/5xx 最多重试 2 次，指数退避 1s/2s，超时 25s
+- `calloutRe` 正则处理 GitHub callout 标记（`[!NOTE]` 等）
+- `VerifySignature` 使用 `crypto/hmac` + `crypto/sha256` 常量时间比较
+
+**验证结果**:
+- [x] `go build ./...` 编译通过
+- [x] `go vet ./...` 无警告
+- [ ] @bot 对话正常（待手动验证）
+- [ ] GitHub test release → 频道收到消息（待手动验证）
+
+**下一步**: 阶段 5 — Admin Panel（Chi + Templ + HTMX）

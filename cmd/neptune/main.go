@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/kazumi-group/neptune/internal/bot"
 	"github.com/kazumi-group/neptune/internal/db"
+	"github.com/kazumi-group/neptune/internal/github"
 	"github.com/kazumi-group/neptune/internal/model"
 )
 
@@ -75,6 +77,37 @@ func main() {
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+	})
+
+	// GitHub webhook endpoint
+	mux.HandleFunc("/github-webhook", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if cfg.GitHubWebhookSecret == "" {
+			http.Error(w, "Webhook not configured", http.StatusServiceUnavailable)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read body", http.StatusBadRequest)
+			return
+		}
+
+		sig := r.Header.Get("X-Hub-Signature-256")
+		channelID := fmt.Sprintf("%d", cfg.ReleaseChannelID)
+
+		if err := github.HandleGitHubWebhook(r.Context(), body, sig, cfg.BotToken, channelID, cfg.GitHubWebhookSecret); err != nil {
+			slog.Error("GitHub webhook error", "error", err)
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 	})

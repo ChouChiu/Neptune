@@ -19,7 +19,7 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 			recoveryMiddleware,
 			groupInitMiddleware(database),
 		),
-		tgbot.WithDefaultHandler(handler.Orchestrator(database)),
+		tgbot.WithDefaultHandler(handler.Orchestrator(database, cfg)),
 		tgbot.WithSkipGetMe(),
 	)
 	if err != nil {
