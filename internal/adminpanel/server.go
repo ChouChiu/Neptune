@@ -2,6 +2,7 @@ package adminpanel
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -43,10 +44,25 @@ func NewServer(database *db.DB, botToken, botUsername string) http.Handler {
 // handleLogin processes Telegram Login Widget authentication.
 func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var data map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		dec := json.NewDecoder(r.Body)
+		dec.UseNumber()
+		var raw map[string]any
+		if err := dec.Decode(&raw); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "Invalid request body"})
 			return
+		}
+
+		// Normalize all values to strings (Telegram sends id as number)
+		data := make(map[string]string, len(raw))
+		for k, v := range raw {
+			switch val := v.(type) {
+			case json.Number:
+				data[k] = val.String()
+			case string:
+				data[k] = val
+			default:
+				data[k] = fmt.Sprintf("%v", val)
+			}
 		}
 
 		if !VerifyTelegramAuth(botToken, data) {
@@ -93,7 +109,7 @@ func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 		})
 
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user, "token": session})
 	}
 }
 
@@ -108,15 +124,15 @@ func handleMe(botToken string) http.HandlerFunc {
 
 		userID := VerifySession(botToken, cookie.Value)
 		if userID == 0 {
-			http.SetCookie(w, &http.Cookie{
-				Name:     "nep_session",
-				Value:    "",
-				Path:     "/",
-				MaxAge:   -1,
-				HttpOnly: true,
-				Secure:   true,
-				SameSite: http.SameSiteLaxMode,
-			})
+		http.SetCookie(w, &http.Cookie{
+			Name:     "nep_session",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
 			writeJSON(w, http.StatusOK, map[string]any{"user": nil})
 			return
 		}

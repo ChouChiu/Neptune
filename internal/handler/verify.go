@@ -404,12 +404,25 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 
 // strToInt64 converts a string to int64, returning 0 on error.
 func strToInt64(s string) int64 {
+	if len(s) == 0 {
+		return 0
+	}
+	negative := false
+	start := 0
+	if s[0] == '-' {
+		negative = true
+		start = 1
+	}
 	var n int64
-	for _, c := range s {
+	for i := start; i < len(s); i++ {
+		c := s[i]
 		if c < '0' || c > '9' {
 			return 0
 		}
 		n = n*10 + int64(c-'0')
+	}
+	if negative {
+		return -n
 	}
 	return n
 }

@@ -26,31 +26,39 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 		return nil, err
 	}
 
+	// Helper to register command with optional bot username suffix
+	registerCommand := func(cmd string, h tgbot.HandlerFunc) {
+		b.RegisterHandler(tgbot.HandlerTypeMessageText, cmd, tgbot.MatchTypeCommand, h)
+		if cfg.BotUsername != "" {
+			b.RegisterHandler(tgbot.HandlerTypeMessageText, cmd+"@"+cfg.BotUsername, tgbot.MatchTypeCommand, h)
+		}
+	}
+
 	// Phase 2: Core commands
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "ping", tgbot.MatchTypeCommand, handler.Ping())
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "help", tgbot.MatchTypeCommand, handler.Help())
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "id", tgbot.MatchTypeCommand, handler.ID(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "connect", tgbot.MatchTypeCommand, handler.Connect(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "switch", tgbot.MatchTypeCommand, handler.Switch(database))
+	registerCommand("ping", handler.Ping())
+	registerCommand("help", handler.Help())
+	registerCommand("id", handler.ID(database))
+	registerCommand("connect", handler.Connect(database))
+	registerCommand("switch", handler.Switch(database))
 
 	// Phase 3: Group management commands
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "start", tgbot.MatchTypeCommand, handler.StartVerify(database, nil))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "setwelcome", tgbot.MatchTypeCommand, handler.SetWelcome(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "enablewelcome", tgbot.MatchTypeCommand, handler.EnableWelcome(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "disablewelcome", tgbot.MatchTypeCommand, handler.DisableWelcome(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "setverifybutton", tgbot.MatchTypeCommand, handler.SetVerifyButton(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "setverifytimeout", tgbot.MatchTypeCommand, handler.SetVerifyTimeout(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "testverify", tgbot.MatchTypeCommand, handler.TestVerify(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "rule", tgbot.MatchTypeCommand, handler.Rule(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "addkeyword", tgbot.MatchTypeCommand, handler.AddKeyword(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "addregex", tgbot.MatchTypeCommand, handler.AddRegex(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "listkeywords", tgbot.MatchTypeCommand, handler.ListKeywords(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "removekeyword", tgbot.MatchTypeCommand, handler.RemoveKeywordCmd(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "enablevotekick", tgbot.MatchTypeCommand, handler.EnableVotekick(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "disablevotekick", tgbot.MatchTypeCommand, handler.DisableVotekick(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "kick", tgbot.MatchTypeCommand, handler.Kick(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "warn", tgbot.MatchTypeCommand, handler.Warn(database))
-	b.RegisterHandler(tgbot.HandlerTypeMessageText, "report", tgbot.MatchTypeCommand, handler.Report(database))
+	registerCommand("start", handler.StartVerify(database, nil))
+	registerCommand("setwelcome", handler.SetWelcome(database))
+	registerCommand("enablewelcome", handler.EnableWelcome(database))
+	registerCommand("disablewelcome", handler.DisableWelcome(database))
+	registerCommand("setverifybutton", handler.SetVerifyButton(database))
+	registerCommand("setverifytimeout", handler.SetVerifyTimeout(database))
+	registerCommand("testverify", handler.TestVerify(database))
+	registerCommand("rule", handler.Rule(database))
+	registerCommand("addkeyword", handler.AddKeyword(database))
+	registerCommand("addregex", handler.AddRegex(database))
+	registerCommand("listkeywords", handler.ListKeywords(database))
+	registerCommand("removekeyword", handler.RemoveKeywordCmd(database))
+	registerCommand("enablevotekick", handler.EnableVotekick(database))
+	registerCommand("disablevotekick", handler.DisableVotekick(database))
+	registerCommand("kick", handler.Kick(database))
+	registerCommand("warn", handler.Warn(database))
+	registerCommand("report", handler.Report(database))
 
 	// Callback handlers
 	b.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "switch:", tgbot.MatchTypePrefix, handler.SwitchCallback(database))

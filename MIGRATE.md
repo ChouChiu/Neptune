@@ -765,3 +765,67 @@ Week 7-8    阶段 6  部署、数据迁移、端到端测试
 - [ ] 警告列表加载（待手动验证）
 
 **下一步**: 阶段 6 — 部署与收尾
+
+### 阶段 6：部署与收尾 ✅ 已完成
+
+**完成日期**: 2026-06-02
+
+| # | 任务 | 状态 | 备注 |
+|---|------|------|------|
+| 6.1 | 数据迁移 | ✅ | `deploy/migrate-d1-to-sqlite.sh` — wrangler D1 导出 + SQLite 导入 |
+| 6.2 | R2 验证码迁移 | ✅ | `deploy/migrate-r2-captcha.sh` — rclone/wrangler 下载到本地 |
+| 6.3 | Makefile deploy 目标 | ✅ | `deploy`, `deploy-full`, `setup`, `webhook`, `e2e` 目标 |
+| 6.4 | systemd service | ✅ | `deploy/neptune.service` — 安全加固 + 资源限制 |
+| 6.5 | Nginx 反向代理 | ✅ | `deploy/nginx.conf` — HTTPS + rate limiting + 路由 |
+| 6.6 | Telegram webhook 注册 | ✅ | `deploy/register-webhook.sh` + 内置 `/set-webhook` 端点 |
+| 6.7 | 端到端测试 | ✅ | `deploy/e2e-test.sh` — 健康检查 + webhook + admin panel + 命令验证 |
+| 6.8 | 文档更新 | ✅ | README.md (Go 部署说明) + AGENTS.md (双版本架构) |
+
+**附加产出**:
+- `deploy/setup.sh` — 一键 VPS 初始化脚本（用户创建、目录结构、systemd、Nginx、SSL）
+- Makefile 新增 `DEPLOY_HOST`, `DEPLOY_DIR`, `DOMAIN`, `WEBHOOK_SECRET`, `BASE_URL` 变量
+- README.md 新增 Go 开发和部署说明，保留 Cloudflare Workers 旧版说明
+- AGENTS.md 完全重写，覆盖 Go 和 Cloudflare Workers 双版本架构
+
+**关键实现细节**:
+- `migrate-d1-to-sqlite.sh`: 逐表导出 D1 → SQL 文件 → 创建 SQLite → 导入，支持 wrangler CLI
+- `migrate-r2-captcha.sh`: 优先使用 rclone（批量快），降级到 wrangler（逐文件）
+- `neptune.service`: `ProtectSystem=strict` + `ReadWritePaths=/opt/neptune/data` 安全加固
+- `nginx.conf`: webhook 限流 30r/s + burst 50，独立 location 路由
+- `e2e-test.sh`: 测试 health、webhook、admin panel、GitHub webhook、Telegram API 命令注册
+- `setup.sh`: 自动创建 neptune 用户、安装 systemd service、配置 Nginx、创建 .env 模板
+
+**验证结果**:
+- [x] `go build ./...` 编译通过
+- [x] `go vet ./...` 无警告
+- [x] `make build-prod` Linux 静态二进制构建成功
+- [ ] 首次部署：`make setup` → 编辑 .env → `make deploy` → `make webhook`（待手动验证）
+- [ ] 完整部署：`make deploy-full` 数据迁移（待手动验证）
+- [ ] E2E 测试：`make e2e BASE_URL=https://bot.example.com`（待手动验证）
+
+---
+
+## 迁移完成 ✅
+
+所有 6 个阶段已全部完成。Neptune 已从 Cloudflare Workers + TypeScript 迁移至 Go 单二进制部署架构。
+
+### 迁移总结
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 0 | 项目初始化与 DB 层 | ✅ |
+| 1 | 核心共享层 | ✅ |
+| 2 | Bot 框架与简单命令 | ✅ |
+| 3 | 群组管理功能 | ✅ |
+| 4 | 高级功能 (AI + GitHub) | ✅ |
+| 5 | Admin Panel (Chi + Templ + HTMX) | ✅ |
+| 6 | 部署与收尾 | ✅ |
+
+### 下一步
+
+1. **首次 VPS 部署**: `make setup DEPLOY_HOST=root@your-server DOMAIN=bot.example.com`
+2. **配置 secrets**: 编辑 `/opt/neptune/.env`
+3. **部署应用**: `make deploy DEPLOY_HOST=user@your-server`
+4. **迁移数据**: `make deploy-full` (如需从 Cloudflare 迁移)
+5. **注册 webhook**: `make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=xxx`
+6. **验证**: `make e2e BASE_URL=https://bot.example.com`

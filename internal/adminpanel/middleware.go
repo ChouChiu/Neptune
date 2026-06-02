@@ -2,37 +2,40 @@ package adminpanel
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"strings"
 )
 
 type contextKey string
 
 const userIDKey contextKey = "admin_user_id"
 
-// SessionAuthMiddleware reads the nep_session cookie, verifies it, and injects
-// the user ID into the request context. If the cookie is missing or invalid,
-// it responds with 401 Unauthorized.
+// SessionAuthMiddleware reads the nep_session cookie or Authorization header,
+// verifies it, and injects the user ID into the request context.
 func SessionAuthMiddleware(botToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("nep_session")
-			if err != nil || cookie.Value == "" {
+			// Try Authorization header first, then cookie
+			var sessionValue string
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				sessionValue = strings.TrimPrefix(auth, "Bearer ")
+			}
+			if sessionValue == "" {
+				if cookie, err := r.Cookie("nep_session"); err == nil && cookie.Value != "" {
+					sessionValue = cookie.Value
+				}
+			}
+
+			if sessionValue == "" {
+				slog.Warn("SessionAuth: no session", "path", r.URL.Path)
 				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
 
-			userID := VerifySession(botToken, cookie.Value)
+			userID := VerifySession(botToken, sessionValue)
 			if userID == 0 {
-				// Clear invalid cookie
-				http.SetCookie(w, &http.Cookie{
-					Name:     "nep_session",
-					Value:    "",
-					Path:     "/",
-					MaxAge:   -1,
-					HttpOnly: true,
-					Secure:   true,
-					SameSite: http.SameSiteLaxMode,
-				})
+				slog.Warn("SessionAuth: invalid session", "path", r.URL.Path)
 				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
 				return
 			}

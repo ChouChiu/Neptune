@@ -161,24 +161,24 @@ func FormatGeneratedMarkdownV2(text string) string {
 		return store.Protect(MarkdownBold(parts[1]))
 	})
 
-	// Italic with underscores
-	italicUnderscoreRe := regexp.MustCompile(`(^|[\s(\[{])_([^_\n]+?)_(?=$|[\s)\]},.!?;:])`)
+	// Italic with underscores (no lookahead — capture trailing boundary)
+	italicUnderscoreRe := regexp.MustCompile(`(^|[\s(\[{])_([^_\n]+?)_([\s)\]},.!?;:]|$)`)
 	formatted = italicUnderscoreRe.ReplaceAllStringFunc(formatted, func(match string) string {
 		parts := italicUnderscoreRe.FindStringSubmatch(match)
-		if len(parts) < 3 {
+		if len(parts) < 4 {
 			return match
 		}
-		return parts[1] + store.Protect(MarkdownItalic(parts[2]))
+		return parts[1] + store.Protect(MarkdownItalic(parts[2])) + parts[3]
 	})
 
-	// Italic with asterisks
-	italicAsteriskRe := regexp.MustCompile(`(^|[\s(\[{])\*([^*\n]+?)\*(?=$|[\s)\]},.!?;:])`)
+	// Italic with asterisks (no lookahead — capture trailing boundary)
+	italicAsteriskRe := regexp.MustCompile(`(^|[\s(\[{])\*([^*\n]+?)\*([\s)\]},.!?;:]|$)`)
 	formatted = italicAsteriskRe.ReplaceAllStringFunc(formatted, func(match string) string {
 		parts := italicAsteriskRe.FindStringSubmatch(match)
-		if len(parts) < 3 {
+		if len(parts) < 4 {
 			return match
 		}
-		return parts[1] + store.Protect(MarkdownItalic(parts[2]))
+		return parts[1] + store.Protect(MarkdownItalic(parts[2])) + parts[3]
 	})
 
 	// List markers

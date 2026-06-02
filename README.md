@@ -119,12 +119,53 @@ AI 聊天（和真正的涅普聊天！）
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。（涅普不太懂这些，但指挥官应该没问题吧？）
 
+### 本地开发（Go 版）
+
 ```bash
-bun install           # 安装依赖（涅普帮你装好了~）
-bun run dev           # 本地开发（涅普在旁边看着你写代码！）
-bun run lint          # Biome 检查（代码要写得漂亮哦！）
-bun run typecheck     # TypeScript 类型检查（涅普帮你检查！）
-bun run deploy        # 部署到 Cloudflare（涅普帮你发布！）
+# 安装依赖
+go mod download
+
+# 生成 templ 模板
+make generate
+
+# 本地运行（需要 .env 配置）
+make dev              # air 热重载
+
+# 构建 & 测试
+make build            # 编译
+make test             # 运行测试
+make lint             # 静态分析
+```
+
+### 部署到 VPS
+
+```bash
+# 首次部署 — 初始化服务器
+make setup DEPLOY_HOST=root@your-server DOMAIN=bot.example.com
+
+# 编辑 /opt/neptune/.env 填入 secrets
+
+# 常规部署
+make deploy DEPLOY_HOST=user@your-server
+
+# 完整部署（含 D1 数据迁移 + R2 验证码迁移）
+make deploy-full DEPLOY_HOST=user@your-server
+
+# 注册 Telegram webhook
+make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=your-secret
+
+# 端到端测试
+make e2e BASE_URL=https://bot.example.com
+```
+
+### Cloudflare Workers 版（旧版）
+
+```bash
+bun install           # 安装依赖
+bun run dev           # 本地开发
+bun run lint          # Biome 检查
+bun run typecheck     # TypeScript 类型检查
+bun run deploy        # 部署到 Cloudflare
 ```
 
 ## License
