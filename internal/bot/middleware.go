@@ -50,6 +50,10 @@ func groupInitMiddleware(database *db.DB) tgbot.Middleware {
 				if err := database.InitGroup(update.Message.Chat.ID); err != nil {
 					slog.Error("Failed to init group", "chat_id", update.Message.Chat.ID, "error", err)
 				}
+			} else if update.ChatMember != nil && (update.ChatMember.Chat.Type == "group" || update.ChatMember.Chat.Type == "supergroup") {
+				if err := database.InitGroup(update.ChatMember.Chat.ID); err != nil {
+					slog.Error("Failed to init group", "chat_id", update.ChatMember.Chat.ID, "error", err)
+				}
 			}
 			next(ctx, b, update)
 		}

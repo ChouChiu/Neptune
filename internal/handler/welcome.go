@@ -255,6 +255,99 @@ func escapeGroupTitle(title string) string {
 	return util.EscapeMd(title)
 }
 
+// WelcomeNewMembersFromChatMember returns a handler for chat_member updates.
+// This handles new member joins via the newer ChatMemberUpdated API.
+func WelcomeNewMembersFromChatMember(database *db.DB) tgbot.HandlerFunc {
+	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+		if update.ChatMember == nil {
+			return
+		}
+
+		cm := update.ChatMember
+
+		// Check if this is a new member join (old status is left/kicked, new status is member)
+		isNewJoin := (cm.OldChatMember.Type == models.ChatMemberTypeLeft || cm.OldChatMember.Type == models.ChatMemberTypeBanned) &&
+			cm.NewChatMember.Type == models.ChatMemberTypeMember
+
+		if !isNewJoin {
+			return
+		}
+
+		groupID := cm.Chat.ID
+
+		config, err := database.GetGroupConfig(groupID)
+		if err != nil {
+			slog.Error("Failed to get group config", "error", err)
+			return
+		}
+		if config == nil || config.WelcomeEnabled == 0 {
+			return
+		}
+
+		_ = database.CleanExpiredVerifications()
+
+		// Get user from NewChatMember.Member
+		var newMember *models.User
+		if cm.NewChatMember.Member != nil {
+			newMember = cm.NewChatMember.Member.User
+		}
+		if newMember == nil {
+			return
+		}
+
+		if newMember.IsBot {
+			return
+		}
+
+		userID := newMember.ID
+		nickname := util.GetNickname(newMember)
+
+		welcomeText := util.ReplacePlaceholders(
+			config.WelcomeMessage,
+			util.EscapeMd(nickname),
+			userID,
+			escapeGroupTitle(cm.Chat.Title),
+		)
+
+		botUsername := getBotUsername(ctx, b)
+		verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
+
+		// Send welcome to the group
+		groupMsg, err := b.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:    groupID,
+			Text:      welcomeText,
+			ParseMode: models.ParseModeMarkdown,
+			ReplyMarkup: &models.InlineKeyboardMarkup{
+				InlineKeyboard: [][]models.InlineKeyboardButton{
+					{
+						{Text: config.VerifyButtonText, URL: verifyURL},
+					},
+				},
+			},
+		})
+
+		var welcomeMsgID *int64
+		if err == nil && groupMsg != nil {
+			mid := int64(groupMsg.ID)
+			welcomeMsgID = &mid
+		}
+
+		timeout := config.VerifyTimeout
+		expiresAt := util.CurrentTimestamp() + int64(timeout) + 300
+
+		if err := database.AddPendingVerification(
+			userID, groupID, "", expiresAt, welcomeMsgID, false,
+		); err != nil {
+			slog.Error("Failed to add pending verification", "error", err)
+		}
+
+		// Restrict user (mute)
+		if err := restrictUser(ctx, b, groupID, userID); err != nil {
+			slog.Error("Failed to restrict user", "user_id", userID, "error", err)
+		}
+	}
+}
+
 // intToStr converts an int64 to string.
 func intToStr(n int64) string {
 	if n < 0 {

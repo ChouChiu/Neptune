@@ -68,6 +68,9 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 	// Welcome new members handler (registered via RegisterHandlerMatchFunc for new_chat_members)
 	b.RegisterHandlerMatchFunc(newChatMembersMatch, handler.WelcomeNewMembers(database))
 
+	// Welcome new members via chat_member updates (newer API)
+	b.RegisterHandlerMatchFunc(chatMemberJoinedMatch, handler.WelcomeNewMembersFromChatMember(database))
+
 	slog.Info("Bot initialized")
 	return b, nil
 }
@@ -75,6 +78,17 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 // newChatMembersMatch matches updates with new_chat_members.
 func newChatMembersMatch(update *models.Update) bool {
 	return update.Message != nil && len(update.Message.NewChatMembers) > 0
+}
+
+// chatMemberJoinedMatch matches chat_member updates where a user joins the group.
+func chatMemberJoinedMatch(update *models.Update) bool {
+	if update.ChatMember == nil {
+		return false
+	}
+	cm := update.ChatMember
+	// Old status is left or kicked, new status is member
+	return (cm.OldChatMember.Type == models.ChatMemberTypeLeft || cm.OldChatMember.Type == models.ChatMemberTypeBanned) &&
+		cm.NewChatMember.Type == models.ChatMemberTypeMember
 }
 
 // SetCommands registers the bot command list with Telegram.
