@@ -614,3 +614,26 @@ Week 7-8    阶段 6  部署、数据迁移、端到端测试
 - [ ] DB 查询单元测试（待编写）
 
 **下一步**: 阶段 1 — 核心共享层
+
+### 阶段 1：核心共享层 ✅ 已完成
+
+**完成日期**: 2026-06-02
+
+| # | 任务 | 状态 | 备注 |
+|---|------|------|------|
+| 1.1 | `util/time.go` | ✅ | CurrentTimestamp() |
+| 1.2 | `util/nickname.go` | ✅ | GetNickname() |
+| 1.3 | `util/placeholder.go` | ✅ | ReplacePlaceholders() |
+| 1.4 | `util/reply.go` | ✅ | ReplyOptions() |
+| 1.5 | `util/chinese.go` | ✅ | ToSimplified() / ToTraditional() |
+| 1.6 | `util/permission.go` | ✅ | CheckAdminPermission() / CheckGroupAdmin() |
+| 1.7 | `util/sendqueue.go` | ✅ | SendQueue with channel + goroutine |
+| 1.8 | `util/markdown.go` | ✅ | MarkdownV2 转义 + GFM 转换 |
+| 1.9 | `util/captcha.go` | ✅ | BMP 验证码生成 + 本地文件存储 |
+
+**验证结果**:
+- [x] `go build ./...` 编译通过
+- [ ] `go test ./internal/util/...` 全通过（待编写）
+- [ ] captcha BMP 可查看（待验证）
+
+**下一步**: 阶段 2 — Bot 框架与简单命令
