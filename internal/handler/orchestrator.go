@@ -19,14 +19,18 @@ func Orchestrator(database *db.DB) tgbot.HandlerFunc {
 
 		// Private chat: check for captcha reply
 		if update.Message.Chat.Type == "private" {
-			// TODO: handleCaptchaReply (Phase 3)
+			if HandleCaptchaReply(ctx, b, database, update) {
+				return
+			}
 			return
 		}
 
 		// Group chat: AI chat → keyword match
 		if update.Message.Chat.Type == "group" || update.Message.Chat.Type == "supergroup" {
 			// TODO: handleAiChat (Phase 4)
-			// TODO: handleKeywordMatch (Phase 3)
+			if HandleKeywordMatch(ctx, b, database, update) {
+				return
+			}
 			return
 		}
 	}

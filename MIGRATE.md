@@ -657,3 +657,34 @@ Week 7-8    阶段 6  部署、数据迁移、端到端测试
 - [ ] 本地启动 bot，响应 /ping /help /id（待手动验证）
 
 **下一步**: 阶段 3 — 群组管理功能
+
+### 阶段 3：群组管理功能 ✅ 已完成
+
+**完成日期**: 2026-06-02
+
+| # | 任务 | 状态 | 备注 |
+|---|------|------|------|
+| 3.1 | `handler/welcome.go` | ✅ | /setwelcome, /enablewelcome, /disablewelcome, WelcomeNewMembers |
+| 3.2 | `handler/verify.go` | ✅ | /start verify*, rule_ack callback, sendCaptcha, restrictUser |
+| 3.3 | `handler/captcha_handler.go` | ✅ | HandleCaptchaReply (DM 验证码回复) |
+| 3.4 | `handler/rule.go` | ✅ | /rule 命令 |
+| 3.5 | `handler/keywords.go` | ✅ | /addkeyword, /addregex, /listkeywords, /removekeyword, HandleKeywordMatch |
+| 3.6 | `handler/votekick.go` | ✅ | /enablevotekick, /disablevotekick, /kick, vk:* callback |
+| 3.7 | `handler/warn.go` | ✅ | /warn 命令 |
+| 3.8 | `handler/report.go` | ✅ | /report 命令 |
+
+**附加产出**:
+- `handler/helpers.go` — requireGroup, requireReplyTarget, requireNonBot, requireAdmin, chatMemberUser, getBotUsername
+- `db/queries.go` — 新增 GetPendingVerificationsByUser 查询
+- `util/time.go` — 新增 RandomString 函数
+- `bot/bot.go` — 注册所有 Phase 3 命令 + callback handlers
+- `handler/orchestrator.go` — 接入 HandleCaptchaReply + HandleKeywordMatch
+
+**验证结果**:
+- [x] `go build ./...` 编译通过
+- [x] `go vet ./...` 无警告
+- [ ] 测试群：入群→欢迎→验证码→验证通过→发言（待手动验证）
+- [ ] 关键词触发（待手动验证）
+- [ ] 投票流程（待手动验证）
+
+**下一步**: 阶段 4 — 高级功能

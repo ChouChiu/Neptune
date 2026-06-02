@@ -254,6 +254,28 @@ func (d *DB) RemovePendingVerification(userID, groupID int64) error {
 	return err
 }
 
+// GetPendingVerificationsByUser returns all pending (non-expired) verifications for a user.
+func (d *DB) GetPendingVerificationsByUser(userID int64) ([]model.PendingVerification, error) {
+	now := currentTimestamp()
+	rows, err := d.Query(
+		"SELECT * FROM pending_verifications WHERE user_id = ? AND expires_at > ?", userID, now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var verifications []model.PendingVerification
+	for rows.Next() {
+		var pv model.PendingVerification
+		if err := rows.Scan(&pv.UserID, &pv.GroupID, &pv.CaptchaText, &pv.ExpiresAt, &pv.WelcomeMessageID, &pv.Attempts, &pv.RuleAckDone); err != nil {
+			return nil, err
+		}
+		verifications = append(verifications, pv)
+	}
+	return verifications, rows.Err()
+}
+
 // CleanExpiredVerifications removes expired verifications.
 func (d *DB) CleanExpiredVerifications() error {
 	now := currentTimestamp()
