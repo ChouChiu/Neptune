@@ -28,6 +28,7 @@ func main() {
 	collectorHandler := adminpanel.NewSlogHandler(logCollector)
 	multiHandler := adminpanel.NewMultiHandler(stdoutHandler, collectorHandler)
 	slog.SetDefault(slog.New(multiHandler))
+
 	// Load configuration from environment
 	cfg := &model.Config{
 		BotToken:            os.Getenv("BOT_TOKEN"),

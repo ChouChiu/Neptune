@@ -183,9 +183,14 @@ func handleLogsStream(collector *LogCollector) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
 
 		ch := collector.Subscribe()
 		defer collector.Unsubscribe(ch)
+
+		// Send initial comment to establish connection
+		fmt.Fprintf(w, ": connected\n\n")
+		flusher.Flush()
 
 		ctx := r.Context()
 		for {
