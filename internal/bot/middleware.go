@@ -14,10 +14,14 @@ import (
 func loggingMiddleware(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.Message != nil {
+			var userID int64
+			if update.Message.From != nil {
+				userID = update.Message.From.ID
+			}
 			slog.Info("Message",
 				"chat_id", update.Message.Chat.ID,
 				"chat_type", update.Message.Chat.Type,
-				"user_id", update.Message.From.ID,
+				"user_id", userID,
 				"text", update.Message.Text,
 			)
 		} else if update.CallbackQuery != nil {

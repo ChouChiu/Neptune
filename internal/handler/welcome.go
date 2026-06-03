@@ -104,7 +104,7 @@ func DisableWelcome(database *db.DB) tgbot.HandlerFunc {
 // WelcomeNewMembers returns a handler for new_chat_members events.
 // It processes new members joining a group: deletes join message, sends welcome,
 // creates pending verification, and restricts the user.
-func WelcomeNewMembers(database *db.DB) tgbot.HandlerFunc {
+func WelcomeNewMembers(database *db.DB, configuredBotUsername string) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.Message == nil || len(update.Message.NewChatMembers) == 0 {
 			return
@@ -144,7 +144,18 @@ func WelcomeNewMembers(database *db.DB) tgbot.HandlerFunc {
 				escapeGroupTitle(update.Message.Chat.Title),
 			)
 
-			botUsername := getBotUsername(ctx, b)
+			botUsername := configuredBotUsername
+			if botUsername == "" {
+				botUsername = getBotUsername(ctx, b)
+			}
+			if botUsername == "" {
+				slog.Error("Failed to build verify URL: bot username is empty", "group_id", groupID, "user_id", userID)
+				b.SendMessage(ctx, &tgbot.SendMessageParams{
+					ChatID: groupID,
+					Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
+				})
+				continue
+			}
 			verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
 
 			// Send welcome to the group
@@ -165,6 +176,8 @@ func WelcomeNewMembers(database *db.DB) tgbot.HandlerFunc {
 			if err == nil && groupMsg != nil {
 				mid := int64(groupMsg.ID)
 				welcomeMsgID = &mid
+			} else if err != nil {
+				slog.Error("Failed to send welcome verification message", "group_id", groupID, "user_id", userID, "error", err)
 			}
 
 			timeout := config.VerifyTimeout
@@ -270,7 +283,7 @@ func escapeGroupTitle(title string) string {
 
 // WelcomeNewMembersFromChatMember returns a handler for chat_member updates.
 // This handles new member joins via the newer ChatMemberUpdated API.
-func WelcomeNewMembersFromChatMember(database *db.DB) tgbot.HandlerFunc {
+func WelcomeNewMembersFromChatMember(database *db.DB, configuredBotUsername string) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.ChatMember == nil {
 			return
@@ -357,7 +370,18 @@ func WelcomeNewMembersFromChatMember(database *db.DB) tgbot.HandlerFunc {
 			escapeGroupTitle(cm.Chat.Title),
 		)
 
-		botUsername := getBotUsername(ctx, b)
+		botUsername := configuredBotUsername
+		if botUsername == "" {
+			botUsername = getBotUsername(ctx, b)
+		}
+		if botUsername == "" {
+			slog.Error("Failed to build verify URL: bot username is empty", "group_id", groupID, "user_id", userID)
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: groupID,
+				Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
+			})
+			return
+		}
 		verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
 
 		// Send welcome to the group
@@ -378,6 +402,8 @@ func WelcomeNewMembersFromChatMember(database *db.DB) tgbot.HandlerFunc {
 		if err == nil && groupMsg != nil {
 			mid := int64(groupMsg.ID)
 			welcomeMsgID = &mid
+		} else if err != nil {
+			slog.Error("Failed to send welcome verification message", "group_id", groupID, "user_id", userID, "error", err)
 		}
 
 		timeout := config.VerifyTimeout

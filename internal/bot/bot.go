@@ -66,10 +66,10 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 	b.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "vk:", tgbot.MatchTypePrefix, handler.VotekickCallback(database))
 
 	// Welcome new members handler (registered via RegisterHandlerMatchFunc for new_chat_members)
-	b.RegisterHandlerMatchFunc(newChatMembersMatch, handler.WelcomeNewMembers(database))
+	b.RegisterHandlerMatchFunc(newChatMembersMatch, handler.WelcomeNewMembers(database, cfg.BotUsername))
 
 	// Welcome new members via chat_member updates (newer API)
-	b.RegisterHandlerMatchFunc(chatMemberJoinedMatch, handler.WelcomeNewMembersFromChatMember(database))
+	b.RegisterHandlerMatchFunc(chatMemberJoinedMatch, handler.WelcomeNewMembersFromChatMember(database, cfg.BotUsername))
 
 	slog.Info("Bot initialized")
 	return b, nil
