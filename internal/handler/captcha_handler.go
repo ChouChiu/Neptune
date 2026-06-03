@@ -62,9 +62,30 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 				slog.Error("Failed to unrestrict user after captcha", "error", err)
 				b.SendMessage(ctx, &tgbot.SendMessageParams{
 					ChatID: update.Message.Chat.ID,
-					Text:   "验证成功，但解除限制失败。请联系管理员。",
+					Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10001)",
 				})
 			} else {
+				member, err := b.GetChatMember(ctx, &tgbot.GetChatMemberParams{
+					ChatID: groupID,
+					UserID: userID,
+				})
+				if err != nil {
+					slog.Error("Failed to verify member permissions after captcha", "error", err)
+					b.SendMessage(ctx, &tgbot.SendMessageParams{
+						ChatID: update.Message.Chat.ID,
+						Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10002)",
+					})
+					return true
+				}
+				if !canMemberSendMessages(member) {
+					slog.Error("Member still cannot send messages after captcha", "group_id", groupID, "user_id", userID, "status", member.Type)
+					b.SendMessage(ctx, &tgbot.SendMessageParams{
+						ChatID: update.Message.Chat.ID,
+						Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10003)",
+					})
+					return true
+				}
+
 				_ = database.RemovePendingVerification(userID, groupID)
 				b.SendMessage(ctx, &tgbot.SendMessageParams{
 					ChatID: update.Message.Chat.ID,
@@ -100,4 +121,19 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 	}
 
 	return false
+}
+
+func canMemberSendMessages(member *models.ChatMember) bool {
+	if member == nil {
+		return false
+	}
+
+	switch member.Type {
+	case models.ChatMemberTypeOwner, models.ChatMemberTypeAdministrator, models.ChatMemberTypeMember:
+		return true
+	case models.ChatMemberTypeRestricted:
+		return member.Restricted != nil && member.Restricted.CanSendMessages
+	default:
+		return false
+	}
 }

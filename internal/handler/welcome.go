@@ -187,51 +187,64 @@ func WelcomeNewMembers(database *db.DB) tgbot.HandlerFunc {
 // restrictUser restricts a user in a group (all permissions set to false).
 func restrictUser(ctx context.Context, b *tgbot.Bot, groupID, userID int64) error {
 	_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
-		ChatID: groupID,
-		UserID: userID,
-		Permissions: &models.ChatPermissions{
-			CanSendMessages:       false,
-			CanSendAudios:         false,
-			CanSendDocuments:      false,
-			CanSendPhotos:         false,
-			CanSendVideos:         false,
-			CanSendVideoNotes:     false,
-			CanSendVoiceNotes:     false,
-			CanSendPolls:          false,
-			CanSendOtherMessages:  false,
-			CanAddWebPagePreviews: false,
-			CanChangeInfo:         false,
-			CanInviteUsers:        false,
-			CanPinMessages:        false,
-			CanManageTopics:       false,
-		},
+		ChatID:                        groupID,
+		UserID:                        userID,
+		Permissions:                   restrictedChatPermissions(),
+		UseIndependentChatPermissions: true,
 	})
 	return err
 }
 
-// unrestrictUser restores all permissions for a user.
 func unrestrictUser(ctx context.Context, b *tgbot.Bot, groupID, userID int64) error {
 	_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
-		ChatID: groupID,
-		UserID: userID,
-		Permissions: &models.ChatPermissions{
-			CanSendMessages:       true,
-			CanSendAudios:         true,
-			CanSendDocuments:      true,
-			CanSendPhotos:         true,
-			CanSendVideos:         true,
-			CanSendVideoNotes:     true,
-			CanSendVoiceNotes:     true,
-			CanSendPolls:          true,
-			CanSendOtherMessages:  true,
-			CanAddWebPagePreviews: true,
-			CanChangeInfo:         true,
-			CanInviteUsers:        true,
-			CanPinMessages:        true,
-			CanManageTopics:       true,
-		},
+		ChatID:                        groupID,
+		UserID:                        userID,
+		Permissions:                   unrestrictedChatPermissions(),
+		UseIndependentChatPermissions: true,
 	})
 	return err
+}
+
+func restrictedChatPermissions() *models.ChatPermissions {
+	return &models.ChatPermissions{
+		CanSendMessages:       false,
+		CanSendAudios:         false,
+		CanSendDocuments:      false,
+		CanSendPhotos:         false,
+		CanSendVideos:         false,
+		CanSendVideoNotes:     false,
+		CanSendVoiceNotes:     false,
+		CanSendPolls:          false,
+		CanSendOtherMessages:  false,
+		CanAddWebPagePreviews: false,
+		CanChangeInfo:         false,
+		CanInviteUsers:        false,
+		CanPinMessages:        false,
+		CanManageTopics:       false,
+		CanEditTag:            false,
+		CanReactToMessages:    false,
+	}
+}
+
+func unrestrictedChatPermissions() *models.ChatPermissions {
+	return &models.ChatPermissions{
+		CanSendMessages:       true,
+		CanSendAudios:         true,
+		CanSendDocuments:      true,
+		CanSendPhotos:         true,
+		CanSendVideos:         true,
+		CanSendVideoNotes:     true,
+		CanSendVoiceNotes:     true,
+		CanSendPolls:          true,
+		CanSendOtherMessages:  true,
+		CanAddWebPagePreviews: true,
+		CanChangeInfo:         true,
+		CanInviteUsers:        true,
+		CanPinMessages:        true,
+		CanManageTopics:       true,
+		CanEditTag:            true,
+		CanReactToMessages:    true,
+	}
 }
 
 // trimSpace trims whitespace from a string.
