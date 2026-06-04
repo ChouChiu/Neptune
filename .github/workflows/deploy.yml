@@ -52,7 +52,7 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           source: "bin/neptune"
           target: "/opt/neptune/"
-          strip_components: 2
+          strip_components: 1
 
       - name: Upload migrations
         uses: appleboy/scp-action@v1
@@ -60,8 +60,8 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
-          source: "migrations/"
-          target: "/opt/neptune/"
+          source: "migrations/*"
+          target: "/opt/neptune/migrations/"
           strip_components: 1
 
       - name: Upload deploy scripts
@@ -70,8 +70,8 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
-          source: "deploy/"
-          target: "/opt/neptune/"
+          source: "deploy/*"
+          target: "/opt/neptune/deploy/"
           strip_components: 1
 
       - name: Restart service
