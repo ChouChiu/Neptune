@@ -388,12 +388,14 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 			util.EscapeMd(nickname),
 			userID,
 			escapeGroupTitle(groupTitle),
+			true,
 		)
 		plainWelcomeText := util.ReplacePlaceholders(
 			config.WelcomeMessage,
 			nickname,
 			userID,
 			groupTitle,
+			false,
 		)
 
 		replyMarkup := &models.InlineKeyboardMarkup{

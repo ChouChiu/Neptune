@@ -342,12 +342,14 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 		util.EscapeMd(nickname),
 		userID,
 		escapeGroupTitle(req.groupTitle),
+		true,
 	)
 	plainWelcomeText := util.ReplacePlaceholders(
 		config.WelcomeMessage,
 		nickname,
 		userID,
 		req.groupTitle,
+		false,
 	)
 
 	botUsername := configuredBotUsername

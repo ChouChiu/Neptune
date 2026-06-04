@@ -145,6 +145,7 @@ func HandleKeywordMatch(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		util.EscapeMd(nickname),
 		userID,
 		util.EscapeMd(groupName),
+		true,
 	)
 
 	b.SendMessage(ctx, &tgbot.SendMessageParams{
