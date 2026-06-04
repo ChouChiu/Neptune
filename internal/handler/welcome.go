@@ -178,6 +178,7 @@ func WelcomeNewMembers(database *db.DB, configuredBotUsername string) tgbot.Hand
 					"user_id", userID,
 					"message_id", groupMsg.ID,
 					"message_thread_id", update.Message.MessageThreadID,
+					"update_source", "message_new_chat_members",
 				)
 			} else if err != nil {
 				slog.Error("Failed to send welcome verification message", "group_id", groupID, "user_id", userID, "error", err)
@@ -318,6 +319,151 @@ func sendVerificationWelcome(ctx context.Context, b *tgbot.Bot, groupID int64, m
 		Text:            plainText,
 		ReplyMarkup:     replyMarkup,
 	})
+}
+
+// WelcomeNewMembersFromChatMember returns a handler for chat_member updates.
+// This handles new member joins via the newer ChatMemberUpdated API.
+func WelcomeNewMembersFromChatMember(database *db.DB, configuredBotUsername string) tgbot.HandlerFunc {
+	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+		if update.ChatMember == nil {
+			return
+		}
+
+		cm := update.ChatMember
+		slog.Info("WelcomeNewMembersFromChatMember triggered",
+			"chat_id", cm.Chat.ID,
+			"user_id", cm.From.ID,
+			"old_status", cm.OldChatMember.Type,
+			"new_status", cm.NewChatMember.Type,
+		)
+
+		// Check if this is a new member join:
+		// Old status is NOT member/restricted (i.e., user was not in the group before)
+		// New status is member or restricted (i.e., user is now in the group)
+		oldStatus := cm.OldChatMember.Type
+		newStatus := cm.NewChatMember.Type
+
+		// User was not in the group before (left, banned, or unknown)
+		wasNotMember := oldStatus != models.ChatMemberTypeMember && oldStatus != models.ChatMemberTypeRestricted
+
+		// User is now in the group (member or restricted)
+		isNowMember := newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeRestricted
+
+		if !(wasNotMember && isNowMember) {
+			slog.Info("Not a new join, skipping",
+				"was_not_member", wasNotMember,
+				"is_now_member", isNowMember,
+			)
+			return
+		}
+
+		groupID := cm.Chat.ID
+
+		config, err := database.GetGroupConfig(groupID)
+		if err != nil {
+			slog.Error("Failed to get group config", "error", err)
+			return
+		}
+		if config == nil || config.WelcomeEnabled == 0 {
+			return
+		}
+
+		_ = database.CleanExpiredVerifications()
+
+		// Get user from NewChatMember (could be Member or Restricted)
+		var newMember *models.User
+		switch cm.NewChatMember.Type {
+		case models.ChatMemberTypeMember:
+			if cm.NewChatMember.Member != nil {
+				newMember = cm.NewChatMember.Member.User
+			}
+		case models.ChatMemberTypeRestricted:
+			if cm.NewChatMember.Restricted != nil {
+				newMember = cm.NewChatMember.Restricted.User
+			}
+		}
+		if newMember == nil {
+			slog.Warn("Could not get user from NewChatMember",
+				"chat_id", groupID,
+				"new_member_type", cm.NewChatMember.Type,
+			)
+			return
+		}
+
+		slog.Info("Processing new member from chat_member update",
+			"user_id", newMember.ID,
+			"nickname", newMember.FirstName,
+			"is_bot", newMember.IsBot,
+		)
+
+		if newMember.IsBot {
+			return
+		}
+
+		userID := newMember.ID
+		nickname := util.GetNickname(newMember)
+
+		welcomeText := util.ReplacePlaceholders(
+			config.WelcomeMessage,
+			util.EscapeMd(nickname),
+			userID,
+			escapeGroupTitle(cm.Chat.Title),
+		)
+		plainWelcomeText := util.ReplacePlaceholders(
+			config.WelcomeMessage,
+			nickname,
+			userID,
+			cm.Chat.Title,
+		)
+
+		botUsername := configuredBotUsername
+		if botUsername == "" {
+			botUsername = getBotUsername(ctx, b)
+		}
+		if botUsername == "" {
+			slog.Error("Failed to build verify URL: bot username is empty", "group_id", groupID, "user_id", userID)
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: groupID,
+				Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
+			})
+			return
+		}
+		verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
+
+		groupMsg, err := sendVerificationWelcome(
+			ctx, b, groupID, 0,
+			welcomeText, plainWelcomeText, config.VerifyButtonText, verifyURL,
+		)
+
+		var welcomeMsgID *int64
+		if err == nil && groupMsg != nil {
+			mid := int64(groupMsg.ID)
+			welcomeMsgID = &mid
+			slog.Info("Welcome verification message sent",
+				"group_id", groupID,
+				"user_id", userID,
+				"message_id", groupMsg.ID,
+				"message_thread_id", 0,
+				"update_source", "chat_member",
+			)
+		} else if err != nil {
+			slog.Error("Failed to send welcome verification message", "group_id", groupID, "user_id", userID, "error", err)
+		}
+
+		timeout := config.VerifyTimeout
+		expiresAt := util.CurrentTimestamp() + int64(timeout) + 300
+
+		if err := database.AddPendingVerification(
+			userID, groupID, "", expiresAt, welcomeMsgID, false,
+		); err != nil {
+			slog.Error("Failed to add pending verification", "error", err)
+		}
+
+		// Restrict user (mute)
+		if err := restrictUser(ctx, b, groupID, userID); err != nil {
+			slog.Error("Failed to restrict user", "user_id", userID, "error", err)
+		}
+	}
 }
 
 // intToStr converts an int64 to string.
