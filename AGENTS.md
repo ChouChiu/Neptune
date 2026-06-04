@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Telegram group management bot (Neptune). **Go single-binary** on Debian VPS with SQLite. Legacy Cloudflare Workers version exists but is no longer the primary target.
+Telegram group management bot (Neptune). Go single-binary on Debian VPS with SQLite.
 
 ## Commands
 
@@ -18,7 +18,7 @@ make webhook           # register Telegram webhook (needs DOMAIN + WEBHOOK_SECRE
 make e2e               # end-to-end tests (needs BASE_URL)
 ```
 
-### Before building or committing
+### Before committing
 
 ```bash
 make generate          # if any *.templ files changed
@@ -27,94 +27,80 @@ make vet               # go vet
 go build ./...         # verify compilation
 ```
 
-CI: `.github/workflows/deploy.yml` auto-deploys on push to `main` (installs templ, generates, builds, uploads, restarts). Manual checks still recommended locally before push.
+CI (`.github/workflows/deploy.yml`) auto-deploys on push to `main` but does **not** run lint/vet/tests — it only builds and deploys. Run checks locally before push.
 
-## Environment variables
+Commit style: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, etc.)
 
-Loaded from `.env` (gitignored). Required:
+## Environment
 
-| Variable | Purpose |
-|----------|---------|
-| `BOT_TOKEN` | Telegram bot token (required, exits if missing) |
-| `BOT_USERNAME` | Bot username without `@` — used for `command@username` handler registration |
-| `HERMES_API_URL` | Hermes Agent API Server URL (default `http://127.0.0.1:8642/v1`) |
-| `HERMES_API_KEY` | Bearer token for Hermes API Server authentication |
-| `GITHUB_WEBHOOK_SECRET` | HMAC-SHA256 secret for GitHub webhook + `/set-webhook` auth |
-| `RELEASE_CHANNEL_ID` | Telegram channel ID for GitHub release notifications |
+Loaded from `.env` (gitignored). See `.env.example` for all variables. Key ones:
+
+| Variable | Notes |
+|----------|-------|
+| `BOT_TOKEN` | Required, exits if missing |
+| `BOT_USERNAME` | Without `@` — registers `cmd@username` handler variants |
+| `HERMES_API_URL` | Hermes Agent API (default `http://127.0.0.1:8642/v1`) |
+| `HERMES_API_KEY` | Bearer token for Hermes |
+| `GITHUB_WEBHOOK_SECRET` | Also used as `/set-webhook` auth token |
+| `RELEASE_CHANNEL_ID` | Telegram channel for GitHub release notifications |
 | `REUSE_CAPTCHA` | `"true"` to reuse captcha images across users |
-| `LISTEN_ADDR` | HTTP listen address (default `:8080`) |
-| `DB_PATH` | SQLite database path (default `data/neptune.db`) |
-| `DATA_DIR` | Data directory root (default `./data`) |
 
 ## Key constraints
 
-- **Go modules** (`go.mod` / `go.sum`), module path: `github.com/kazumi-group/neptune`
-- **Linter**: golangci-lint. **Formatter**: `go fmt` (tabs).
-- **Templ**: `*.templ` files must be compiled with `make generate` before building. Generated `*_templ.go` files are gitignored.
-- **SQLite**: `modernc.org/sqlite` (pure Go, no CGO), WAL mode, `data/neptune.db`
+- Module path: `github.com/kazumi-group/neptune`
+- **templ**: `*.templ` → `make generate` → `*_templ.go` (gitignored). Must generate before building.
+- **SQLite**: `modernc.org/sqlite` (pure Go, no CGO), WAL mode. All DB access via `internal/db/queries.go` `DB` struct methods.
 - **Bot framework**: `github.com/go-telegram/bot` (not grammy)
-- **HTTP router**: `github.com/go-chi/chi/v5` for admin panel; standard `net/http` mux for main server
-- **Admin panel**: `github.com/a-h/templ` templates + HTMX frontend (no JS framework)
-- **Deployment**: systemd service + Nginx reverse proxy
-- **Env**: `.env` file (not `wrangler.toml`), secrets via environment variables
+- **Admin panel**: `github.com/go-chi/chi/v5` + `github.com/a-h/templ` + HTMX. Separate Chi router mounted at `/admin/`.
+- **Main server**: standard `net/http` ServeMux (not Chi)
+- **Linter**: golangci-lint. **Formatter**: `go fmt` (tabs).
 
 ## Architecture
 
-Standard Go server layout: `internal/` enforced private by compiler, `cmd/` for entry points.
+```
+cmd/neptune/main.go           # entry: HTTP server, bot init, graceful shutdown
+internal/
+├── bot/bot.go                # New() creates bot, registerCommand() registers cmd + cmd@username
+├── bot/middleware.go          # logging, recovery, groupInit
+├── handler/                  # all command + callback handlers
+│   ├── orchestrator.go       # catch-all message dispatch (registered as WithDefaultHandler)
+│   └── ...
+├── adminpanel/               # Chi + Templ + HTMX admin panel
+│   ├── server.go             # Chi router, returns http.Handler
+│   ├── auth.go               # Telegram Login Widget + HMAC session cookie
+│   └── handler/              # API handlers returning HTML fragments
+├── github/release.go         # GitHub webhook + GFM→MarkdownV2
+├── db/                       # SQLite: db.go (connection), schema.go (auto-apply), queries.go
+├── model/model.go            # data structs + Config
+└── util/                     # shared helpers (see Conventions below)
+migrations/                   # SQL migrations, tracked in schema_migrations table
+```
 
-**Entry point**: `cmd/neptune/main.go` — HTTP server on `:8080`, mounts `/webhook`, `/admin/`, `/github-webhook`, `/set-webhook`, `/health`. Graceful shutdown on SIGINT/SIGTERM.
-
-**Handler registration**: `internal/bot/bot.go` — `registerCommand()` helper registers both `cmd` and `cmd@username` variants. Orchestrator is the default (catch-all) handler.
-
-**Adding a new feature**:
-1. Create handler in `internal/handler/<name>.go`
-2. Register in `internal/bot/bot.go` (`registerCommand` or `RegisterHandler` for callbacks)
-3. If new DB table: add to `internal/db/schema.go`, create migration in `migrations/`, add queries in `internal/db/queries.go`
-4. Run `make generate` if templ files changed, then `make lint && make vet`
+**Adding a feature**: handler in `internal/handler/` → register in `internal/bot/bot.go` → if new DB table: schema in `schema.go`, migration in `migrations/`, queries in `queries.go` → `make generate && make lint && make vet`
 
 ## Database
 
-- **Schema**: `internal/db/schema.go` — applied automatically on startup via `ApplySchema()`
-- **Migrations**: `migrations/*.sql` — tracked in `schema_migrations` table via `ApplyMigrations()`
-- **Queries**: `internal/db/queries.go` — all DB access through `DB` struct methods
-- **Tables**: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`, `warnings`, `reports`, `locks`, `kv`, `schema_migrations`
+- Schema auto-applied on startup via `ApplySchema()`
+- Migrations in `migrations/*.sql`, tracked via `schema_migrations` table, each file runs once
+- Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`, `warnings`, `reports`, `locks`, `kv`, `schema_migrations`
 
 ## AI chat
 
 - Triggered by @mention or replying to bot messages in groups
-- Hermes Agent API Server: `POST {HERMES_API_URL}/chat/completions` (OpenAI-compatible)
-  - Default: `http://127.0.0.1:8642/v1`
-  - Auth: `Authorization: Bearer {HERMES_API_KEY}`
-  - Model: `hermes-agent` (Hermes uses its configured backend model)
-- Role card and world lore defined in Hermes `SOUL.md` (deploy/hermes/SOUL.md)
-- Context in SQLite `kv` table as `ai:context:{groupId}`, limited to 50 messages (7-day window)
-- Daily usage: 15/day per user, admins exempt (`ai_chat_usage` table)
-- API timeout 25s via `context.WithTimeout`, retries up to 2 times on 429/5xx
-- `ShouldTriggerAi()` filters replies to system messages using keyword list
-- Typing indicator: goroutine + `context.WithCancel` (not polling)
-- Single-process mutex (`aiContextMu sync.Mutex`) replaces distributed lock
+- Hermes Agent API: `POST {HERMES_API_URL}/chat/completions` (OpenAI-compatible), model `hermes-agent`
+- Context: SQLite `kv` table, key `ai:context:{groupId}`, 50 messages, 7-day window
+- Daily limit: 15/user/day, admins exempt (`ai_chat_usage` table)
+- Timeout 25s, retries up to 2 on 429/5xx
+- `ShouldTriggerAi()` filters system-message replies via keyword list
+- Typing indicator: goroutine + `context.WithCancel`
+- Single-process mutex (`aiContextMu`) — no distributed lock needed
 
-## GitHub Release webhook
+## Other subsystems
 
-- Endpoint: `POST /github-webhook` in `cmd/neptune/main.go`
-- Verifies `X-Hub-Signature-256` (HMAC-SHA256)
-- Only processes `action: "published"`
-- GFM → MarkdownV2 conversion in `internal/github/release.go`
-- `!` is reserved in Telegram MarkdownV2 — callout markers like `[!Note]` must be stripped before escaping
-- GitHub webhook payload uses `\r\n` — normalized to `\n` before processing
-
-## Permission model
-
-- `CheckAdminPermission()` in `internal/util/permission.go`
-- Groups: checks Telegram `administrator`/`creator` via `GetChatMember`
-- Private chat: checks `admin_connections` table (bound via `/connect`)
-- `/id` in a group auto-connects the user as admin
-
-## Keyword matching
-
-- `github.com/liuzl/gocc` for traditional/simplified Chinese normalization
-- Regex patterns cached with 60s TTL
-- `/addregex` validates length (≤200 chars) and runs complexity test (100ms threshold) to prevent ReDoS
+- **GitHub webhook**: `POST /github-webhook`, verifies `X-Hub-Signature-256`, processes `action: "published"` only. `!` is reserved in Telegram MarkdownV2 — strip callout markers like `[!Note]` before escaping. Payload uses `\r\n` — normalized to `\n`.
+- **Permissions**: `CheckAdminPermission()` in `internal/util/permission.go`. Groups: Telegram admin/creator via `GetChatMember`. Private chat: `admin_connections` table. `/id` in group auto-connects user.
+- **Keywords**: `github.com/liuzl/gocc` for Chinese normalization. Regex cached 60s TTL. `/addregex` validates ≤200 chars + 100ms complexity test (ReDoS prevention).
+- **Captcha**: BMP at `data/captcha/{groupId}/{userId}.bmp`, 5 attempts max before lockout.
 
 ## Conventions
 
@@ -122,18 +108,14 @@ Standard Go server layout: `internal/` enforced private by compiler, `cmd/` for 
 - MarkdownV2 escaping: `internal/util/markdown.go` → `EscapeMarkdownV2()`
 - Placeholders: `{nickname}`, `{userid}`, `{groupname}` in `internal/util/placeholder.go`
 - `GetNickname(user)` in `internal/util/nickname.go`
-- Captcha: BMP in `data/captcha/{groupId}/{userId}.bmp`, 5 attempts max before lockout
-- `/rule` sets group rules shown during verification (10s reading time via `rule_ack` callback)
-- Orchestrator dispatch: DM → captcha reply → group AI → keyword match (in `handler/orchestrator.go`)
+- Orchestrator dispatch order: DM → captcha reply → group AI → keyword match
 
 ## Deployment
 
-Full guide in [DEPLOY.md](DEPLOY.md). `make help` shows the quickstart.
-
 ```bash
-make setup DEPLOY_HOST=root@your-server DOMAIN=bot.example.com  # init server
-make deploy DEPLOY_HOST=user@your-server                         # daily deploy
-make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=your-secret   # register webhook
+make setup DEPLOY_HOST=root@server DOMAIN=bot.example.com   # init server
+make deploy DEPLOY_HOST=user@server                          # daily deploy
+make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=secret    # register webhook
 ```
 
-Prerequisites: Debian/Ubuntu VPS, domain pointing to server, `BOT_TOKEN` + `BOT_USERNAME`. AI chat requires Hermes Agent with `MIMO_API_KEY` configured in Hermes (not a Neptune env var).
+Full guide in [DEPLOY.md](DEPLOY.md). CI needs `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PASSWORD` as GitHub secrets.
