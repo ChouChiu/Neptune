@@ -378,21 +378,46 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 
 		userID := update.Message.From.ID
 		nickname := util.GetNickname(update.Message.From)
+		groupTitle := update.Message.Chat.Title
 
 		botUsername := getBotUsername(ctx, b)
 		verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   fmt.Sprintf("测试验证消息\n\n欢迎 %s 来到群组！", nickname),
-			ReplyMarkup: &models.InlineKeyboardMarkup{
-				InlineKeyboard: [][]models.InlineKeyboardButton{
-					{
-						{Text: config.VerifyButtonText, URL: verifyURL},
-					},
+		welcomeText := util.ReplacePlaceholders(
+			config.WelcomeMessage,
+			util.EscapeMd(nickname),
+			userID,
+			escapeGroupTitle(groupTitle),
+		)
+		plainWelcomeText := util.ReplacePlaceholders(
+			config.WelcomeMessage,
+			nickname,
+			userID,
+			groupTitle,
+		)
+
+		replyMarkup := &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: config.VerifyButtonText, URL: verifyURL},
 				},
 			},
+		}
+
+		_, err = b.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:    update.Message.Chat.ID,
+			Text:      welcomeText,
+			ParseMode: models.ParseModeMarkdown,
+			ReplyMarkup: replyMarkup,
 		})
+		if err != nil {
+			slog.Warn("TestVerify: MarkdownV2 failed, retrying as plain text", "error", err)
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID:    update.Message.Chat.ID,
+				Text:      plainWelcomeText,
+				ReplyMarkup: replyMarkup,
+			})
+		}
 	}
 }
 
