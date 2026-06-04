@@ -143,6 +143,12 @@ func WelcomeNewMembers(database *db.DB, configuredBotUsername string) tgbot.Hand
 				userID,
 				escapeGroupTitle(update.Message.Chat.Title),
 			)
+			plainWelcomeText := util.ReplacePlaceholders(
+				config.WelcomeMessage,
+				nickname,
+				userID,
+				update.Message.Chat.Title,
+			)
 
 			botUsername := configuredBotUsername
 			if botUsername == "" {
@@ -158,19 +164,10 @@ func WelcomeNewMembers(database *db.DB, configuredBotUsername string) tgbot.Hand
 			}
 			verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
 
-			// Send welcome to the group
-			groupMsg, err := b.SendMessage(ctx, &tgbot.SendMessageParams{
-				ChatID:    groupID,
-				Text:      welcomeText,
-				ParseMode: models.ParseModeMarkdown,
-				ReplyMarkup: &models.InlineKeyboardMarkup{
-					InlineKeyboard: [][]models.InlineKeyboardButton{
-						{
-							{Text: config.VerifyButtonText, URL: verifyURL},
-						},
-					},
-				},
-			})
+			groupMsg, err := sendVerificationWelcome(
+				ctx, b, groupID, update.Message.MessageThreadID,
+				welcomeText, plainWelcomeText, config.VerifyButtonText, verifyURL,
+			)
 
 			var welcomeMsgID *int64
 			if err == nil && groupMsg != nil {
@@ -281,6 +278,42 @@ func escapeGroupTitle(title string) string {
 	return util.EscapeMd(title)
 }
 
+func sendVerificationWelcome(ctx context.Context, b *tgbot.Bot, groupID int64, messageThreadID int, markdownText, plainText, buttonText, verifyURL string) (*models.Message, error) {
+	replyMarkup := &models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: buttonText, URL: verifyURL},
+			},
+		},
+	}
+
+	params := &tgbot.SendMessageParams{
+		ChatID:          groupID,
+		MessageThreadID: messageThreadID,
+		Text:            markdownText,
+		ParseMode:       models.ParseModeMarkdown,
+		ReplyMarkup:     replyMarkup,
+	}
+
+	groupMsg, err := b.SendMessage(ctx, params)
+	if err == nil {
+		return groupMsg, nil
+	}
+
+	slog.Warn("Failed to send MarkdownV2 welcome verification message, retrying as plain text",
+		"group_id", groupID,
+		"message_thread_id", messageThreadID,
+		"error", err,
+	)
+
+	return b.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:          groupID,
+		MessageThreadID: messageThreadID,
+		Text:            plainText,
+		ReplyMarkup:     replyMarkup,
+	})
+}
+
 // WelcomeNewMembersFromChatMember returns a handler for chat_member updates.
 // This handles new member joins via the newer ChatMemberUpdated API.
 func WelcomeNewMembersFromChatMember(database *db.DB, configuredBotUsername string) tgbot.HandlerFunc {
@@ -369,6 +402,12 @@ func WelcomeNewMembersFromChatMember(database *db.DB, configuredBotUsername stri
 			userID,
 			escapeGroupTitle(cm.Chat.Title),
 		)
+		plainWelcomeText := util.ReplacePlaceholders(
+			config.WelcomeMessage,
+			nickname,
+			userID,
+			cm.Chat.Title,
+		)
 
 		botUsername := configuredBotUsername
 		if botUsername == "" {
@@ -384,19 +423,10 @@ func WelcomeNewMembersFromChatMember(database *db.DB, configuredBotUsername stri
 		}
 		verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
 
-		// Send welcome to the group
-		groupMsg, err := b.SendMessage(ctx, &tgbot.SendMessageParams{
-			ChatID:    groupID,
-			Text:      welcomeText,
-			ParseMode: models.ParseModeMarkdown,
-			ReplyMarkup: &models.InlineKeyboardMarkup{
-				InlineKeyboard: [][]models.InlineKeyboardButton{
-					{
-						{Text: config.VerifyButtonText, URL: verifyURL},
-					},
-				},
-			},
-		})
+		groupMsg, err := sendVerificationWelcome(
+			ctx, b, groupID, 0,
+			welcomeText, plainWelcomeText, config.VerifyButtonText, verifyURL,
+		)
 
 		var welcomeMsgID *int64
 		if err == nil && groupMsg != nil {
