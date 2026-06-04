@@ -34,14 +34,12 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 		}
 	}
 
-	// Phase 2: Core commands
 	registerCommand("ping", handler.Ping())
 	registerCommand("help", handler.Help())
 	registerCommand("id", handler.ID(database))
 	registerCommand("connect", handler.Connect(database))
 	registerCommand("switch", handler.Switch(database))
 
-	// Phase 3: Group management commands
 	registerCommand("start", handler.StartVerify(database, nil))
 	registerCommand("setwelcome", handler.SetWelcome(database))
 	registerCommand("enablewelcome", handler.EnableWelcome(database))
@@ -65,10 +63,8 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 	b.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "rule_ack:", tgbot.MatchTypePrefix, handler.RuleAckCallback(database))
 	b.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "vk:", tgbot.MatchTypePrefix, handler.VotekickCallback(database))
 
-	// Welcome new members handler (registered via RegisterHandlerMatchFunc for new_chat_members)
+	// Telegram may deliver joins as visible service messages, chat_member updates, or both.
 	b.RegisterHandlerMatchFunc(newChatMembersMatch, handler.WelcomeNewMembers(database, cfg.BotUsername))
-
-	// Welcome new members via chat_member updates (newer API)
 	b.RegisterHandlerMatchFunc(chatMemberJoinedMatch, handler.WelcomeNewMembersFromChatMember(database, cfg.BotUsername))
 
 	slog.Info("Bot initialized")
@@ -86,20 +82,7 @@ func chatMemberJoinedMatch(update *models.Update) bool {
 		return false
 	}
 	cm := update.ChatMember
-
-	// Check if this is a new member join:
-	// Old status is NOT member/restricted (i.e., user was not in the group before)
-	// New status is member or restricted (i.e., user is now in the group)
-	oldStatus := cm.OldChatMember.Type
-	newStatus := cm.NewChatMember.Type
-
-	// User was not in the group before (left, banned, or unknown)
-	wasNotMember := oldStatus != models.ChatMemberTypeMember && oldStatus != models.ChatMemberTypeRestricted
-
-	// User is now in the group (member or restricted)
-	isNowMember := newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeRestricted
-
-	return wasNotMember && isNowMember
+	return handler.IsChatMemberJoin(cm.OldChatMember.Type, cm.NewChatMember.Type)
 }
 
 // SetCommands registers the bot command list with Telegram.

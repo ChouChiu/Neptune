@@ -10,20 +10,6 @@ import (
 	"github.com/kazumi-group/neptune/internal/util"
 )
 
-// requireGroup checks that the message is from a group chat.
-// Returns (allowed, groupId).
-func requireGroup(update *models.Update) (bool, int64) {
-	if update.Message == nil {
-		return false, 0
-	}
-	if update.Message.Chat.Type == "private" {
-		b := update.Message.Chat.ID
-		_ = b // will send reply below
-		return false, 0
-	}
-	return true, update.Message.Chat.ID
-}
-
 // requireGroupReply checks group context and sends an error if in private chat.
 func requireGroupReply(ctx context.Context, b *tgbot.Bot, update *models.Update) (bool, int64) {
 	if update.Message == nil {
