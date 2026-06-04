@@ -23,7 +23,7 @@ type keywordCacheEntry struct {
 
 // compiledKeywordRule holds a keyword rule with pre-compiled regex or simplified pattern.
 type compiledKeywordRule struct {
-	rule             model.KeywordRule
+	rule              model.KeywordRule
 	simplifiedPattern string
 }
 
@@ -192,10 +192,7 @@ func AddKeyword(database *db.DB) tgbot.HandlerFunc {
 
 		args := ""
 		if update.Message != nil && update.Message.Text != "" {
-			cmd := "/addkeyword"
-			if len(update.Message.Text) > len(cmd)+1 {
-				args = update.Message.Text[len(cmd)+1:]
-			}
+			args = commandArgs(update.Message.Text, "/addkeyword")
 		}
 		args = trimSpace(args)
 
@@ -262,10 +259,7 @@ func AddRegex(database *db.DB) tgbot.HandlerFunc {
 
 		args := ""
 		if update.Message != nil && update.Message.Text != "" {
-			cmd := "/addregex"
-			if len(update.Message.Text) > len(cmd)+1 {
-				args = update.Message.Text[len(cmd)+1:]
-			}
+			args = commandArgs(update.Message.Text, "/addregex")
 		}
 		args = trimSpace(args)
 
@@ -386,10 +380,7 @@ func RemoveKeywordCmd(database *db.DB) tgbot.HandlerFunc {
 
 		keyword := ""
 		if update.Message != nil && update.Message.Text != "" {
-			cmd := "/removekeyword"
-			if len(update.Message.Text) > len(cmd)+1 {
-				keyword = update.Message.Text[len(cmd)+1:]
-			}
+			keyword = commandArgs(update.Message.Text, "/removekeyword")
 		}
 		keyword = trimSpace(keyword)
 

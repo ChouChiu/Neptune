@@ -34,11 +34,7 @@ func SetWelcome(database *db.DB) tgbot.HandlerFunc {
 
 		text := ""
 		if update.Message != nil && update.Message.Text != "" {
-			// Remove "/setwelcome " prefix
-			cmd := "/setwelcome"
-			if len(update.Message.Text) > len(cmd)+1 {
-				text = update.Message.Text[len(cmd)+1:]
-			}
+			text = commandArgs(update.Message.Text, "/setwelcome")
 		}
 		text = trimSpace(text)
 

@@ -3,12 +3,31 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/kazumi-group/neptune/internal/db"
 	"github.com/kazumi-group/neptune/internal/util"
 )
+
+func commandArgs(text, command string) string {
+	text = trimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	name := fields[0]
+	if name != command && !strings.HasPrefix(name, command+"@") {
+		return ""
+	}
+	return trimSpace(strings.TrimPrefix(text, name))
+}
 
 // requireGroupReply checks group context and sends an error if in private chat.
 func requireGroupReply(ctx context.Context, b *tgbot.Bot, update *models.Update) (bool, int64) {

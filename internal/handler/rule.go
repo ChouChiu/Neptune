@@ -20,10 +20,7 @@ func Rule(database *db.DB) tgbot.HandlerFunc {
 
 		rule := ""
 		if update.Message != nil && update.Message.Text != "" {
-			cmd := "/rule"
-			if len(update.Message.Text) > len(cmd)+1 {
-				rule = update.Message.Text[len(cmd)+1:]
-			}
+			rule = commandArgs(update.Message.Text, "/rule")
 		}
 		rule = trimSpace(rule)
 

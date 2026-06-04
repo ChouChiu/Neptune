@@ -266,10 +266,7 @@ func SetVerifyButton(database *db.DB) tgbot.HandlerFunc {
 
 		text := ""
 		if update.Message != nil && update.Message.Text != "" {
-			cmd := "/setverifybutton"
-			if len(update.Message.Text) > len(cmd)+1 {
-				text = update.Message.Text[len(cmd)+1:]
-			}
+			text = commandArgs(update.Message.Text, "/setverifybutton")
 		}
 		text = trimSpace(text)
 
@@ -305,10 +302,7 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 
 		timeoutStr := ""
 		if update.Message != nil && update.Message.Text != "" {
-			cmd := "/setverifytimeout"
-			if len(update.Message.Text) > len(cmd)+1 {
-				timeoutStr = update.Message.Text[len(cmd)+1:]
-			}
+			timeoutStr = commandArgs(update.Message.Text, "/setverifytimeout")
 		}
 		timeoutStr = trimSpace(timeoutStr)
 
