@@ -48,12 +48,13 @@ func GetTodayDate() string {
 }
 
 // ShouldTriggerAi checks if the message should trigger AI chat.
-func ShouldTriggerAi(update *models.Update, botID int64) bool {
+func ShouldTriggerAi(update *models.Update, botID int64, botUsername string) bool {
 	msg := update.Message
 	if msg == nil {
 		return false
 	}
 
+	botMention := "@" + botUsername
 	if msg.Entities != nil {
 		for _, entity := range msg.Entities {
 			if entity.Type == "mention" || entity.Type == "text_mention" {
@@ -64,7 +65,7 @@ func ShouldTriggerAi(update *models.Update, botID int64) bool {
 					if end <= len(runes) {
 						mentionedText = string(runes[entity.Offset:end])
 					}
-					if strings.HasPrefix(strings.ToLower(mentionedText), "@") {
+					if botUsername != "" && strings.EqualFold(mentionedText, botMention) {
 						return true
 					}
 				} else if entity.Type == "text_mention" && entity.User != nil && entity.User.ID == botID {
@@ -91,6 +92,14 @@ func ShouldTriggerAi(update *models.Update, botID int64) bool {
 	}
 
 	return false
+}
+
+func removeBotMention(text, botUsername string) string {
+	if botUsername == "" {
+		return text
+	}
+	re := regexp.MustCompile(`(?i)@` + regexp.QuoteMeta(botUsername) + `\b`)
+	return re.ReplaceAllString(text, "")
 }
 
 func getAiContext(database *db.DB, groupID int64) ([]model.AiContextMessage, error) {
@@ -444,8 +453,6 @@ func sendAiReply(ctx context.Context, b *tgbot.Bot, sq *db.DB, groupID int64, re
 	}
 }
 
-var mentionMatchRe = regexp.MustCompile(`@(\w+)`)
-
 // HandleAiChat handles AI chat messages in groups. Returns true if the message was handled.
 func HandleAiChat(ctx context.Context, b *tgbot.Bot, database *db.DB, hermesAPIURL, hermesAPIKey string, update *models.Update) bool {
 	if update.Message == nil {
@@ -471,11 +478,11 @@ func HandleAiChat(ctx context.Context, b *tgbot.Bot, database *db.DB, hermesAPIU
 		return false
 	}
 
-	if !ShouldTriggerAi(update, me.ID) {
+	if !ShouldTriggerAi(update, me.ID, me.Username) {
 		return false
 	}
 
-	userMessage := mentionMatchRe.ReplaceAllString(text, "")
+	userMessage := removeBotMention(text, me.Username)
 	userMessage = strings.TrimSpace(userMessage)
 	if userMessage == "" {
 		return false
