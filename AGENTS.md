@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Telegram group management bot (Neptune). Go single-binary on Debian VPS with SQLite.
+Telegram group management bot (Neptune). Docker deployment on Debian VPS with SQLite.
 
 ## Commands
 
@@ -11,9 +11,10 @@ make test              # go test ./...
 make lint              # golangci-lint run ./...
 make vet               # go vet ./...
 make generate          # templ generate (run after editing *.templ files)
-make build-prod        # Linux amd64 static binary (CGO_ENABLED=0)
-make deploy            # rsync + systemctl restart (needs DEPLOY_HOST)
-make setup             # initial VPS setup (run once, needs DEPLOY_HOST + DOMAIN)
+make docker-build      # docker compose build
+make docker-up         # docker compose up -d
+make docker-down       # docker compose down
+make docker-logs       # docker compose logs -f
 make webhook           # register Telegram webhook (needs DOMAIN + WEBHOOK_SECRET)
 make e2e               # end-to-end tests (needs BASE_URL)
 ```
@@ -27,7 +28,7 @@ make vet               # go vet
 go build ./...         # verify compilation
 ```
 
-CI (`.github/workflows/deploy.yml`) auto-deploys on push to `main` but does **not** run lint/vet/tests — it only builds and deploys. Run checks locally before push.
+CI (`.github/workflows/deploy.yml`) auto-deploys on push to `main` — SSHes to VPS, `git pull`, `docker compose up --build -d`. Does **not** run lint/vet/tests. Run checks locally before push.
 
 Commit style: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, etc.)
 
@@ -39,7 +40,7 @@ Loaded from `.env` (gitignored). See `.env.example` for all variables. Key ones:
 |----------|-------|
 | `BOT_TOKEN` | Required, exits if missing |
 | `BOT_USERNAME` | Without `@` — registers `cmd@username` handler variants |
-| `HERMES_API_URL` | Hermes Agent API (default `http://127.0.0.1:8642/v1`) |
+| `HERMES_API_URL` | Hermes Agent API (default `http://host.docker.internal:8642/v1`) |
 | `HERMES_API_KEY` | Bearer token for Hermes |
 | `GITHUB_WEBHOOK_SECRET` | Also used as `/set-webhook` auth token |
 | `RELEASE_CHANNEL_ID` | Telegram channel for GitHub release notifications |
@@ -113,9 +114,17 @@ migrations/                   # SQL migrations, tracked in schema_migrations tab
 ## Deployment
 
 ```bash
-make setup DEPLOY_HOST=root@server DOMAIN=bot.example.com   # init server
-make deploy DEPLOY_HOST=user@server                          # daily deploy
-make webhook DOMAIN=bot.example.com WEBHOOK_SECRET=secret    # register webhook
+# First time: SSH to server, run setup
+ssh root@server "bash -s" < deploy/setup.sh
+
+# Daily: push to main (auto-deploy via GitHub Actions)
+git push
+
+# Manual: SSH to server
+ssh root@server "cd /opt/neptune && git pull && docker compose up --build -d"
+
+# Register webhook
+./deploy/register-webhook.sh bot.example.com secret
 ```
 
-Full guide in [DEPLOY.md](DEPLOY.md). CI needs `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PASSWORD` as GitHub secrets.
+Full guide in [DEPLOY.md](DEPLOY.md). CI needs `DEPLOY_HOST`, `DEPLOY_USER`, `VPS_SSH_KEY` as GitHub secrets.

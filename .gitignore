@@ -16,3 +16,6 @@ bin/
 
 # Generated templ Go files
 *_templ.go
+
+# Persistent data (SQLite, captcha images)
+data/
