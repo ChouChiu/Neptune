@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -14,6 +15,8 @@ import (
 const (
 	welcomeSourceMessageNewChatMembers = "message_new_chat_members"
 	welcomeSourceChatMember            = "chat_member"
+
+	welcomeMessageDeleteDelay = 5 * time.Minute
 )
 
 type welcomeMemberRequest struct {
@@ -393,9 +396,55 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 		slog.Error("Failed to add pending verification", "error", err)
 	}
 
+	if welcomeMsgID != nil {
+		scheduleWelcomeMessageDeletion(ctx, b, database, userID, req.groupID, *welcomeMsgID)
+	}
+
 	if err := restrictUser(ctx, b, req.groupID, userID); err != nil {
 		slog.Error("Failed to restrict user", "user_id", userID, "error", err)
 	}
+}
+
+// scheduleWelcomeMessageDeletion deletes the welcome message after a delay
+// if the user hasn't completed verification by then.
+func scheduleWelcomeMessageDeletion(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, groupID int64, welcomeMsgID int64) {
+	go func() {
+		select {
+		case <-time.After(welcomeMessageDeleteDelay):
+		case <-ctx.Done():
+			return
+		}
+
+		// Check if verification still exists (user hasn't completed it)
+		v, err := database.GetPendingVerification(userID, groupID)
+		if err != nil {
+			slog.Error("Failed to check pending verification for delayed welcome deletion", "error", err)
+			return
+		}
+		if v == nil {
+			// Verification already completed or removed
+			return
+		}
+
+		// Delete the welcome message from the group
+		if _, err := b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+			ChatID:    groupID,
+			MessageID: int(welcomeMsgID),
+		}); err != nil {
+			slog.Warn("Failed to delete expired welcome message",
+				"group_id", groupID,
+				"user_id", userID,
+				"message_id", welcomeMsgID,
+				"error", err,
+			)
+		} else {
+			slog.Info("Deleted expired welcome message",
+				"group_id", groupID,
+				"user_id", userID,
+				"message_id", welcomeMsgID,
+			)
+		}
+	}()
 }
 
 // IsChatMemberJoin reports whether a chat_member update represents a user joining the group.
