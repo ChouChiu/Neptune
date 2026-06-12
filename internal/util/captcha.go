@@ -111,10 +111,10 @@ func GenerateCaptcha(size int) CaptchaResult {
 		text.WriteByte(randomChar())
 	}
 
-	scale := 4
+	scale := 10
 	charW := 5 * scale
 	charH := 7 * scale
-	padding := 10
+	padding := 15
 	width := size*charW + (size-1)*padding + padding*2
 	height := charH + padding*2
 
