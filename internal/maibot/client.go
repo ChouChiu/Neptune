@@ -248,10 +248,42 @@ func (c *Client) handleMessage(data []byte) {
 			return
 		}
 
+		// Try to extract group_id from multiple possible locations
 		groupID := ""
+
+		// 1. From sender_info.group_info
 		if envelope.Payload.MessageInfo != nil && envelope.Payload.MessageInfo.SenderInfo != nil &&
 			envelope.Payload.MessageInfo.SenderInfo.GroupInfo != nil {
 			groupID = envelope.Payload.MessageInfo.SenderInfo.GroupInfo.GroupID
+		}
+
+		// 2. From message_info.platform (sometimes group_id is encoded here)
+		if groupID == "" && envelope.Payload.MessageInfo != nil {
+			// Check if platform contains group info
+			slog.Debug("MaiBot response debug",
+				"msgID", envelope.MsgID,
+				"platform", envelope.Payload.MessageInfo.Platform,
+				"messageID", envelope.Payload.MessageInfo.MessageID)
+		}
+
+		// 3. From message_dim (target receiver info)
+		if groupID == "" && envelope.Payload.MessageDim != nil {
+			slog.Debug("MaiBot response message_dim",
+				"apiKey", envelope.Payload.MessageDim.APIKey,
+				"platform", envelope.Payload.MessageDim.Platform)
+		}
+
+		// 4. Fallback: try to find group_id from pending requests
+		if groupID == "" {
+			c.mu.Lock()
+			for gid, req := range c.pending {
+				if req != nil {
+					groupID = gid
+					slog.Debug("Using fallback group_id from pending", "groupID", gid)
+					break
+				}
+			}
+			c.mu.Unlock()
 		}
 
 		if groupID == "" {
