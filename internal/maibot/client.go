@@ -13,7 +13,6 @@ import (
 
 const (
 	platformID    = "neptune"
-	sendTimeout   = 120 * time.Second
 	reconnectBase = 2 * time.Second
 	reconnectMax  = 30 * time.Second
 )
@@ -161,8 +160,6 @@ func (c *Client) SendMessage(groupID, groupName, userID, nickname, text string) 
 	select {
 	case reply := <-req.ch:
 		return reply, nil
-	case <-time.After(sendTimeout):
-		return "", fmt.Errorf("MaiBot response timeout after %s", sendTimeout)
 	case <-c.done:
 		return "", fmt.Errorf("MaiBot client closed")
 	}
