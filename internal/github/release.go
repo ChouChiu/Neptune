@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kazumi-group/neptune/internal/util"
+	"github.com/ChouChiu/neptune/internal/util"
 )
 
 const (

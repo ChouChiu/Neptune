@@ -1,4 +1,4 @@
-module github.com/kazumi-group/neptune
+module github.com/ChouChiu/neptune
 
 go 1.26.3
 

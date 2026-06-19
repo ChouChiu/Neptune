@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/kazumi-group/neptune/internal/adminpanel/components"
-	"github.com/kazumi-group/neptune/internal/adminpanel/handler"
-	"github.com/kazumi-group/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/adminpanel/components"
+	"github.com/ChouChiu/neptune/internal/adminpanel/handler"
+	"github.com/ChouChiu/neptune/internal/db"
 )
 
 // NewServer creates a Chi router with all admin panel routes registered.

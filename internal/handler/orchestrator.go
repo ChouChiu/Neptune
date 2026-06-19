@@ -5,8 +5,8 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/kazumi-group/neptune/internal/db"
-	"github.com/kazumi-group/neptune/internal/model"
+	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/model"
 )
 
 // Orchestrator returns a default handler that dispatches messages:

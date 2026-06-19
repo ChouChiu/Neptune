@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/kazumi-group/neptune/internal/model"
+	"github.com/ChouChiu/neptune/internal/model"
 	"modernc.org/sqlite"
 )
 

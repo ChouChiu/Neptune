@@ -5,7 +5,7 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/kazumi-group/neptune/internal/util"
+	"github.com/ChouChiu/neptune/internal/util"
 )
 
 // Ping returns a handler that responds with "Pong!".

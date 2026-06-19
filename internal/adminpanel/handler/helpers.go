@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kazumi-group/neptune/internal/db"
-	"github.com/kazumi-group/neptune/internal/model"
+	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/model"
 )
 
 // getUserID extracts the admin user ID from the request context.

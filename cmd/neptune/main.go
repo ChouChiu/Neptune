@@ -12,11 +12,11 @@ import (
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
-	"github.com/kazumi-group/neptune/internal/adminpanel"
-	"github.com/kazumi-group/neptune/internal/bot"
-	"github.com/kazumi-group/neptune/internal/db"
-	"github.com/kazumi-group/neptune/internal/github"
-	"github.com/kazumi-group/neptune/internal/model"
+	"github.com/ChouChiu/neptune/internal/adminpanel"
+	"github.com/ChouChiu/neptune/internal/bot"
+	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/github"
+	"github.com/ChouChiu/neptune/internal/model"
 )
 
 func main() {

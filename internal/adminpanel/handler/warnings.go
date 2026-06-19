@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/kazumi-group/neptune/internal/adminpanel/components"
-	"github.com/kazumi-group/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/adminpanel/components"
+	"github.com/ChouChiu/neptune/internal/db"
 )
 
 // ListWarnings returns an HTMX handler that renders the warnings list as HTML.

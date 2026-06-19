@@ -7,7 +7,7 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/kazumi-group/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/db"
 )
 
 const maxCaptchaAttempts = 5

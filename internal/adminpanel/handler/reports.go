@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kazumi-group/neptune/internal/adminpanel/components"
-	"github.com/kazumi-group/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/adminpanel/components"
+	"github.com/ChouChiu/neptune/internal/db"
 )
 
 // ListReports returns an HTMX handler that renders the reports list as HTML.

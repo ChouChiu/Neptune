@@ -48,7 +48,7 @@ Loaded from `.env` (gitignored). See `.env.example` for all variables. Key ones:
 
 ## Key constraints
 
-- Module path: `github.com/kazumi-group/neptune`
+- Module path: `github.com/ChouChiu/neptune`
 - **templ**: `*.templ` → `make generate` → `*_templ.go` (gitignored). Must generate before building.
 - **SQLite**: `modernc.org/sqlite` (pure Go, no CGO), WAL mode. All DB access via `internal/db/queries.go` `DB` struct methods.
 - **Bot framework**: `github.com/go-telegram/bot` (not grammy)

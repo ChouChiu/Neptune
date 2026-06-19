@@ -50,7 +50,7 @@
 ### 初始化
 
 ```bash
-git clone https://github.com/kazumi-group/neptune.git
+git clone https://github.com/ChouChiu/neptune.git
 cd neptune
 go mod download
 cp .env.example .env  # 编辑填入 secrets
