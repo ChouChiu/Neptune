@@ -131,7 +131,7 @@ func (c *Client) SendMessage(groupID, groupName, userID, nickname, text string) 
 			},
 			MessageSegment: &MessageSegment{
 				Type: "text",
-				Data: text,
+				Data: mustMarshalString(text),
 			},
 			MessageDim: &MessageDim{
 				APIKey:   c.apiKey,
@@ -243,7 +243,7 @@ func (c *Client) handleMessage(data []byte) {
 			return
 		}
 
-		reply := envelope.Payload.MessageSegment.Data
+		reply := envelope.Payload.MessageSegment.TextContent()
 		if reply == "" {
 			return
 		}
@@ -358,4 +358,9 @@ func (c *Client) reconnectLoop() {
 			break
 		}
 	}
+}
+
+func mustMarshalString(s string) json.RawMessage {
+	b, _ := json.Marshal(s)
+	return b
 }

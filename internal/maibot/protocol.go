@@ -1,6 +1,9 @@
 package maibot
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	EnvelopeTypeStd = "sys_std"
@@ -61,9 +64,43 @@ type GroupInfo struct {
 }
 
 // MessageSegment contains the actual message content.
+// Data can be a string or an array of segments (for complex messages).
 type MessageSegment struct {
-	Type string `json:"type"`
-	Data string `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+// TextContent extracts text from the Data field, handling both string and array formats.
+func (m *MessageSegment) TextContent() string {
+	if len(m.Data) == 0 {
+		return ""
+	}
+
+	// Try as string first
+	var s string
+	if err := json.Unmarshal(m.Data, &s); err == nil {
+		return s
+	}
+
+	// Try as array of segments
+	var arr []struct {
+		Type string          `json:"type"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(m.Data, &arr); err == nil {
+		var text string
+		for _, seg := range arr {
+			if seg.Type == "text" {
+				var t string
+				if err := json.Unmarshal(seg.Data, &t); err == nil {
+					text += t
+				}
+			}
+		}
+		return text
+	}
+
+	return ""
 }
 
 // MessageDim contains routing information (target receiver).
