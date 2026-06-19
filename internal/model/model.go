@@ -4,8 +4,8 @@ package model
 type Config struct {
 	BotToken            string
 	BotUsername         string
-	HermesAPIURL        string
-	HermesAPIKey        string
+	MaiBotWSURL         string
+	MaiBotAPIKey        string
 	ReuseCaptcha        bool
 	GitHubWebhookSecret string
 	ReleaseChannelID    int64

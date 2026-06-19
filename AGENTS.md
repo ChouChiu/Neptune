@@ -40,8 +40,8 @@ Loaded from `.env` (gitignored). See `.env.example` for all variables. Key ones:
 |----------|-------|
 | `BOT_TOKEN` | Required, exits if missing |
 | `BOT_USERNAME` | Without `@` — registers `cmd@username` handler variants |
-| `HERMES_API_URL` | Hermes Agent API (default `http://host.docker.internal:8642/v1`) |
-| `HERMES_API_KEY` | Bearer token for Hermes |
+| `MAIBOT_WS_URL` | MaiBot WebSocket API Server (default `ws://127.0.0.1:8090/ws`) |
+| `MAIBOT_API_KEY` | API key for MaiBot WebSocket Server |
 | `GITHUB_WEBHOOK_SECRET` | Also used as `/set-webhook` auth token |
 | `RELEASE_CHANNEL_ID` | Telegram channel for GitHub release notifications |
 | `REUSE_CAPTCHA` | `"true"` to reuse captcha images across users |
@@ -72,6 +72,9 @@ internal/
 │   └── handler/              # API handlers returning HTML fragments
 ├── github/release.go         # GitHub webhook + GFM→MarkdownV2
 ├── db/                       # SQLite: db.go (connection), schema.go (auto-apply), queries.go
+├── maibot/                   # MaiBot WebSocket client (maim_message protocol)
+│   ├── protocol.go           # protocol structs (Envelope, Payload, etc.)
+│   └── client.go             # WebSocket client with auto-reconnect
 ├── model/model.go            # data structs + Config
 └── util/                     # shared helpers (see Conventions below)
 migrations/                   # SQL migrations, tracked in schema_migrations table
@@ -88,13 +91,12 @@ migrations/                   # SQL migrations, tracked in schema_migrations tab
 ## AI chat
 
 - Triggered by @mention or replying to bot messages in groups
-- Hermes Agent API: `POST {HERMES_API_URL}/chat/completions` (OpenAI-compatible), model `hermes-agent`
-- Context: SQLite `kv` table, key `ai:context:{groupId}`, 50 messages, 7-day window
+- MaiBot WebSocket API Server via `maim_message` protocol (persistent WebSocket connection)
+- Context: managed entirely by MaiBot (A_Memorix memory system)
 - Daily limit: 15/user/day, admins exempt (`ai_chat_usage` table)
-- Timeout 25s, retries up to 2 on 429/5xx
 - `ShouldTriggerAi()` filters system-message replies via keyword list
 - Typing indicator: goroutine + `context.WithCancel`
-- Single-process mutex (`aiContextMu`) — no distributed lock needed
+- Per-group serial processing (one pending request per group)
 
 ## Other subsystems
 

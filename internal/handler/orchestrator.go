@@ -6,13 +6,14 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/maibot"
 	"github.com/ChouChiu/neptune/internal/model"
 )
 
 // Orchestrator returns a default handler that dispatches messages:
 // - Private chat: captcha reply
 // - Group chat: AI chat → keyword match
-func Orchestrator(database *db.DB, cfg *model.Config) tgbot.HandlerFunc {
+func Orchestrator(database *db.DB, cfg *model.Config, maiBotClient *maibot.Client) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.Message == nil || update.Message.From == nil {
 			return
@@ -28,7 +29,7 @@ func Orchestrator(database *db.DB, cfg *model.Config) tgbot.HandlerFunc {
 
 		// Group chat: AI chat → keyword match
 		if update.Message.Chat.Type == "group" || update.Message.Chat.Type == "supergroup" {
-			if HandleAiChat(ctx, b, database, cfg.HermesAPIURL, cfg.HermesAPIKey, update) {
+			if HandleAiChat(ctx, b, database, maiBotClient, update) {
 				return
 			}
 			if HandleKeywordMatch(ctx, b, database, update) {

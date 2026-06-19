@@ -16,6 +16,7 @@ import (
 	"github.com/ChouChiu/neptune/internal/bot"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/github"
+	"github.com/ChouChiu/neptune/internal/maibot"
 	"github.com/ChouChiu/neptune/internal/model"
 )
 
@@ -33,14 +34,14 @@ func main() {
 	cfg := &model.Config{
 		BotToken:            os.Getenv("BOT_TOKEN"),
 		BotUsername:         os.Getenv("BOT_USERNAME"),
-		HermesAPIURL:        os.Getenv("HERMES_API_URL"),
-		HermesAPIKey:        os.Getenv("HERMES_API_KEY"),
+		MaiBotWSURL:         os.Getenv("MAIBOT_WS_URL"),
+		MaiBotAPIKey:        os.Getenv("MAIBOT_API_KEY"),
 		ReuseCaptcha:        os.Getenv("REUSE_CAPTCHA") == "true",
 		GitHubWebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
 	}
 
-	if cfg.HermesAPIURL == "" {
-		cfg.HermesAPIURL = "http://127.0.0.1:8642/v1"
+	if cfg.MaiBotWSURL == "" {
+		cfg.MaiBotWSURL = "ws://127.0.0.1:8090/ws"
 	}
 
 	if cfg.BotToken == "" {
@@ -71,8 +72,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize MaiBot WebSocket client
+	maiBotClient := maibot.NewClient(cfg.MaiBotWSURL, cfg.MaiBotAPIKey)
+	if err := maiBotClient.Connect(); err != nil {
+		slog.Error("Failed to connect to MaiBot", "error", err)
+		os.Exit(1)
+	}
+	defer maiBotClient.Close()
+
 	// Create bot
-	b, err := bot.New(cfg, database)
+	b, err := bot.New(cfg, database, maiBotClient)
 	if err != nil {
 		slog.Error("Failed to create bot", "error", err)
 		os.Exit(1)
