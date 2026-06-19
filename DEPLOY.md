@@ -1,6 +1,6 @@
 # Neptune 部署指南
 
-Docker 单容器部署。MaiBot 需单独部署（独立 docker-compose）。
+Docker 单容器部署。
 
 ---
 
@@ -9,7 +9,6 @@ Docker 单容器部署。MaiBot 需单独部署（独立 docker-compose）。
 - 一台 Debian/Ubuntu VPS（推荐 1C1G 以上）
 - 一个域名，已解析到该服务器的 IP
 - VPS 已安装 Docker + Docker Compose（`setup.sh` 会自动安装）
-- VPS 上已运行 MaiBot（AI 聊天后端），安装方法见 [附录：MaiBot 安装](#附录maibot-安装)
 
 ## 第一步：初始化服务器
 
@@ -43,8 +42,6 @@ nano /opt/neptune/.env
 |------|----------|
 | `BOT_TOKEN` | Telegram [@BotFather](https://t.me/BotFather) → `/newbot` |
 | `BOT_USERNAME` | BotFather 创建时分配的用户名（不含 `@`） |
-| `MAIBOT_WS_URL` | MaiBot WebSocket 地址（默认 `ws://127.0.0.1:8090/ws`） |
-| `MAIBOT_API_KEY` | 与 MaiBot `bot_config.toml` 中 `api_server_allowed_api_keys` 一致 |
 | `GITHUB_WEBHOOK_SECRET` | `openssl rand -hex 32` |
 
 ## 第三步：启动服务
@@ -180,149 +177,8 @@ docker compose down
 
 首次构建需下载 Go 依赖和编译，约 3-5 分钟。后续构建有缓存会快很多。
 
-**容器内无法连接 MaiBot？**
-
-确认 `.env` 中 `MAIBOT_WS_URL` 使用 `ws://host.docker.internal:8090/ws`。部分 Linux 内核需在 `docker-compose.yml` 中添加：
-
-```yaml
-extra_hosts:
-  - "host.docker.internal:host-gateway"
-```
-
 **如何重新注册 webhook？**
 
 ```bash
 ./deploy/register-webhook.sh 你的域名 你的密钥
 ```
-
----
-
-## 附录：MaiBot 安装
-
-Neptune 的 AI 聊天功能依赖 MaiBot 作为后端。在 VPS 上执行以下步骤。
-
-### 克隆并配置
-
-```bash
-cd /opt
-git clone https://github.com/Mai-with-u/MaiBot.git
-cd MaiBot
-```
-
-### 创建精简 docker-compose.yml
-
-移除 NapCat、sqlite-web，只保留 core：
-
-```yaml
-services:
-  core:
-    build: .
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8001:8001"   # WebUI
-      - "127.0.0.1:8090:8090"   # WebSocket API Server
-    volumes:
-      - ./docker-config/mmc:/app/config
-      - ./data/MaiMBot:/app/data
-    environment:
-      - TZ=Asia/Shanghai
-```
-
-### 首次启动生成配置
-
-```bash
-docker compose up -d
-# 等待配置文件生成后停止
-docker compose down
-```
-
-### 配置 bot_config.toml
-
-编辑 `./docker-config/mmc/bot_config.toml`：
-
-```toml
-[bot]
-platform = "neptune"
-platforms = ["neptune:neptune"]
-nickname = "你的机器人昵称"
-
-[personality]
-personality = "你的人格设定（200字以内）"
-reply_style = "你的回复风格"
-
-[maim_message]
-enable_api_server = true
-api_server_host = "0.0.0.0"
-api_server_port = 8090
-api_server_allowed_api_keys = ["你的密钥"]
-
-[webui]
-enabled = true
-host = "0.0.0.0"
-port = 8001
-```
-
-### 配置 model_config.toml
-
-编辑 `./docker-config/mmc/model_config.toml`，填入 LLM API 密钥（OpenAI/DeepSeek 等）。
-
-### 启动 MaiBot
-
-```bash
-docker compose up -d
-```
-
-### 配置 Nginx 反代
-
-```nginx
-# MaiBot WebUI
-server {
-    listen 443 ssl;
-    server_name mai.example.com;
-    ssl_certificate ...;
-    ssl_certificate_key ...;
-    location / {
-        proxy_pass http://127.0.0.1:8001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-
-# MaiBot WebSocket API Server
-server {
-    listen 443 ssl;
-    server_name mai-ws.example.com;
-    ssl_certificate ...;
-    ssl_certificate_key ...;
-    location /ws {
-        proxy_pass http://127.0.0.1:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 86400;
-    }
-}
-```
-
-### 验证运行
-
-```bash
-# 检查容器状态
-docker compose ps
-
-# 查看日志
-docker compose logs -f core
-
-# 访问 WebUI
-# 浏览器打开 https://mai.example.com
-```
-
-### 配置 LLM 模型
-
-通过 WebUI（`https://mai.example.com`）配置：
-1. 进入配置向导
-2. 填入 LLM API 密钥
-3. 选择模型（planner 和 replyer 可用同一个）
-4. 配置人格和回复风格
-5. 在聊天页面测试对话

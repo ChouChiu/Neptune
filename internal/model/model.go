@@ -4,8 +4,6 @@ package model
 type Config struct {
 	BotToken            string
 	BotUsername         string
-	MaiBotWSURL         string
-	MaiBotAPIKey        string
 	ReuseCaptcha        bool
 	GitHubWebhookSecret string
 	ReleaseChannelID    int64
@@ -73,22 +71,6 @@ type VoteRecord struct {
 	Choice  int    `json:"choice"`
 }
 
-// AiContextMessage represents a message in AI chat context.
-type AiContextMessage struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	UserID    *int64 `json:"userId,omitempty"`
-	Timestamp int64  `json:"timestamp"`
-}
-
-// AiChatUsage tracks daily AI chat usage per user per group.
-type AiChatUsage struct {
-	UserID  int64  `json:"user_id"`
-	GroupID int64  `json:"group_id"`
-	Date    string `json:"date"`
-	Count   int    `json:"count"`
-}
-
 // Warning represents an admin warning issued to a user.
 type Warning struct {
 	ID        int64  `json:"id"`
@@ -101,17 +83,17 @@ type Warning struct {
 
 // Report represents a user report.
 type Report struct {
-	ID                 int64  `json:"id"`
-	GroupID            int64  `json:"group_id"`
-	ReporterID         int64  `json:"reporter_id"`
-	ReportedUserID     int64  `json:"reported_user_id"`
-	ReportedMessageID  *int64 `json:"reported_message_id"`
+	ID                  int64  `json:"id"`
+	GroupID             int64  `json:"group_id"`
+	ReporterID          int64  `json:"reporter_id"`
+	ReportedUserID      int64  `json:"reported_user_id"`
+	ReportedMessageID   *int64 `json:"reported_message_id"`
 	ReportedMessageText string `json:"reported_message_text"`
-	Content            string `json:"content"`
-	Status             string `json:"status"`
-	ReviewedBy         *int64 `json:"reviewed_by"`
-	ReviewedAt         *int64 `json:"reviewed_at"`
-	CreatedAt          int64  `json:"created_at"`
+	Content             string `json:"content"`
+	Status              string `json:"status"`
+	ReviewedBy          *int64 `json:"reviewed_by"`
+	ReviewedAt          *int64 `json:"reviewed_at"`
+	CreatedAt           int64  `json:"created_at"`
 }
 
 // KVEntry represents a key-value entry (for AI context storage).

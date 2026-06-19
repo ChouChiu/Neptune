@@ -40,8 +40,6 @@ Loaded from `.env` (gitignored). See `.env.example` for all variables. Key ones:
 |----------|-------|
 | `BOT_TOKEN` | Required, exits if missing |
 | `BOT_USERNAME` | Without `@` — registers `cmd@username` handler variants |
-| `MAIBOT_WS_URL` | MaiBot WebSocket API Server (default `ws://127.0.0.1:8090/ws`) |
-| `MAIBOT_API_KEY` | API key for MaiBot WebSocket Server |
 | `GITHUB_WEBHOOK_SECRET` | Also used as `/set-webhook` auth token |
 | `RELEASE_CHANNEL_ID` | Telegram channel for GitHub release notifications |
 | `REUSE_CAPTCHA` | `"true"` to reuse captcha images across users |
@@ -72,9 +70,6 @@ internal/
 │   └── handler/              # API handlers returning HTML fragments
 ├── github/release.go         # GitHub webhook + GFM→MarkdownV2
 ├── db/                       # SQLite: db.go (connection), schema.go (auto-apply), queries.go
-├── maibot/                   # MaiBot WebSocket client (maim_message protocol)
-│   ├── protocol.go           # protocol structs (Envelope, Payload, etc.)
-│   └── client.go             # WebSocket client with auto-reconnect
 ├── model/model.go            # data structs + Config
 └── util/                     # shared helpers (see Conventions below)
 migrations/                   # SQL migrations, tracked in schema_migrations table
@@ -86,17 +81,7 @@ migrations/                   # SQL migrations, tracked in schema_migrations tab
 
 - Schema auto-applied on startup via `ApplySchema()`
 - Migrations in `migrations/*.sql`, tracked via `schema_migrations` table, each file runs once
-- Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `ai_chat_usage`, `warnings`, `reports`, `locks`, `kv`, `schema_migrations`
-
-## AI chat
-
-- Triggered by @mention or replying to bot messages in groups
-- MaiBot WebSocket API Server via `maim_message` protocol (persistent WebSocket connection)
-- Context: managed entirely by MaiBot (A_Memorix memory system)
-- Daily limit: 15/user/day, admins exempt (`ai_chat_usage` table)
-- `ShouldTriggerAi()` filters system-message replies via keyword list
-- Typing indicator: goroutine + `context.WithCancel`
-- Per-group serial processing (one pending request per group)
+- Tables: `groups`, `keywords`, `admin_connections`, `admin_current_group`, `pending_verifications`, `active_votes`, `vote_records`, `warnings`, `reports`, `locks`, `kv`, `schema_migrations`
 
 ## Other subsystems
 
@@ -111,7 +96,7 @@ migrations/                   # SQL migrations, tracked in schema_migrations tab
 - MarkdownV2 escaping: `internal/util/markdown.go` → `EscapeMarkdownV2()`
 - Placeholders: `{nickname}`, `{userid}`, `{groupname}` in `internal/util/placeholder.go`
 - `GetNickname(user)` in `internal/util/nickname.go`
-- Orchestrator dispatch order: DM → captcha reply → group AI → keyword match
+- Orchestrator dispatch order: DM → captcha reply → keyword match
 
 ## Deployment
 

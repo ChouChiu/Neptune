@@ -8,19 +8,18 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/handler"
-	"github.com/ChouChiu/neptune/internal/maibot"
 	"github.com/ChouChiu/neptune/internal/model"
 )
 
 // New creates a new Bot instance with all handlers registered.
-func New(cfg *model.Config, database *db.DB, maiBotClient *maibot.Client) (*tgbot.Bot, error) {
+func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 	b, err := tgbot.New(cfg.BotToken,
 		tgbot.WithMiddlewares(
 			loggingMiddleware,
 			recoveryMiddleware,
 			groupInitMiddleware(database),
 		),
-		tgbot.WithDefaultHandler(handler.Orchestrator(database, cfg, maiBotClient)),
+		tgbot.WithDefaultHandler(handler.Orchestrator(database, cfg)),
 		tgbot.WithSkipGetMe(),
 	)
 	if err != nil {

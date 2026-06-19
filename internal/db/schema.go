@@ -105,14 +105,6 @@ CREATE TABLE IF NOT EXISTS locks (
   expires_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS ai_chat_usage (
-  user_id INTEGER NOT NULL,
-  group_id INTEGER NOT NULL,
-  date TEXT NOT NULL,
-  count INTEGER DEFAULT 1,
-  PRIMARY KEY (user_id, group_id, date)
-);
-
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,

@@ -654,44 +654,7 @@ func (d *DB) UpdateReportStatus(reportID int64, status string, reviewedBy int64)
 	return err
 }
 
-// ── AI Chat Usage ─────────────────────────────────────────────────
-
-// IncrementAiUsage increments the AI chat usage count for a user on a given date.
-// Returns the new count.
-func (d *DB) IncrementAiUsage(userID, groupID int64, date string) (int, error) {
-	// Try to increment first
-	_, err := d.Exec(
-		`INSERT INTO ai_chat_usage (user_id, group_id, date, count) VALUES (?, ?, ?, 1)
-		ON CONFLICT(user_id, group_id, date) DO UPDATE SET count = count + 1`,
-		userID, groupID, date,
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	// Get the updated count
-	var count int
-	err = d.QueryRow(
-		"SELECT count FROM ai_chat_usage WHERE user_id = ? AND group_id = ? AND date = ?",
-		userID, groupID, date,
-	).Scan(&count)
-	return count, err
-}
-
-// GetAiUsage returns the AI chat usage count for a user on a given date.
-func (d *DB) GetAiUsage(userID, groupID int64, date string) (int, error) {
-	var count int
-	err := d.QueryRow(
-		"SELECT count FROM ai_chat_usage WHERE user_id = ? AND group_id = ? AND date = ?",
-		userID, groupID, date,
-	).Scan(&count)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil
-	}
-	return count, err
-}
-
-// ── KV Store (for AI context) ─────────────────────────────────────
+// ── KV Store ──────────────────────────────────────────────────────
 
 // KVGet returns the value for a key, or nil if not found or expired.
 func (d *DB) KVGet(key string) (*string, error) {
@@ -867,16 +830,6 @@ func (d *DB) GetReportCompat(reportID int, userID *int) (*model.Report, error) {
 // UpdateReportStatusCompat is a compatibility wrapper.
 func (d *DB) UpdateReportStatusCompat(reportID int, status string, reviewedBy int) error {
 	return d.UpdateReportStatus(int64(reportID), status, int64(reviewedBy))
-}
-
-// IncrementAiUsageCompat is a compatibility wrapper.
-func (d *DB) IncrementAiUsageCompat(userID, groupID int, date string) (int, error) {
-	return d.IncrementAiUsage(int64(userID), int64(groupID), date)
-}
-
-// GetAiUsageCompat is a compatibility wrapper.
-func (d *DB) GetAiUsageCompat(userID, groupID int, date string) (int, error) {
-	return d.GetAiUsage(int64(userID), int64(groupID), date)
 }
 
 // ConnectAdminCompat is a compatibility wrapper.
