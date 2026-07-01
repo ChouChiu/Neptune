@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 // Report returns a handler for the /report command.
@@ -36,7 +36,7 @@ func Report(database *db.DB) tgbot.HandlerFunc {
 		content = trimSpace(content)
 
 		if content == "" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            util.EscapeMd("请填写举报内容。用法: /report <举报原因>"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -76,7 +76,7 @@ func Report(database *db.DB) tgbot.HandlerFunc {
 			util.EscapeMd(content),
 		)
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            text,
 			ParseMode:       models.ParseModeMarkdown,

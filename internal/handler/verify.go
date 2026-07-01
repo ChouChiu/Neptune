@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"strings"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 const ruleAckWaitSeconds = 10
@@ -41,7 +41,7 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 		}
 
 		if !strings.HasPrefix(payload, "verify") {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "欢迎使用 Neptune！发送 /help 查看命令列表。",
 			})
@@ -60,7 +60,7 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 		}
 
 		if update.Message.From == nil || update.Message.From.ID != targetUserID {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "这不是你的验证链接。",
 			})
@@ -71,7 +71,7 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 
 		config, err := database.GetGroupConfig(groupID)
 		if err != nil || config == nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "群组配置错误。",
 			})
@@ -92,7 +92,7 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 				welcomeMsgID, false,
 			)
 
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:    update.Message.Chat.ID,
 				Text:      buildRuleText(config.Rule, ruleAckWaitSeconds),
 				ParseMode: models.ParseModeMarkdown,
@@ -109,7 +109,7 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 
 		sent := sendCaptcha(ctx, b, database, userID, groupID, config.VerifyTimeout, welcomeMsgID)
 		if !sent {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "无法发送验证码，请先私聊机器人并点击「开始」，然后重新加入群组。",
 			})
@@ -141,7 +141,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 
 		config, err := database.GetGroupConfig(groupID)
 		if err != nil || config == nil || config.Rule == "" {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "配置错误。",
 			})
@@ -156,7 +156,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 
 			msg := update.CallbackQuery.Message
 			if msg.Message != nil {
-				b.EditMessageText(ctx, &tgbot.EditMessageTextParams{
+				editMessageText(ctx, b, &tgbot.EditMessageTextParams{
 					ChatID:    msg.Message.Chat.ID,
 					MessageID: msg.Message.ID,
 					Text:      buildRuleText(config.Rule, remaining),
@@ -171,7 +171,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 				})
 			}
 
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            fmt.Sprintf("还需等待 %d 秒", remaining),
 			})
@@ -180,7 +180,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 
 		existing, _ := database.GetPendingVerification(userID, groupID)
 		if existing == nil {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "验证已过期，请重新加入群组。",
 			})
@@ -188,7 +188,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if existing.RuleAckDone != 0 {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "你已经点过啦~",
 			})
@@ -197,7 +197,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 
 		_ = database.SetRuleAckDone(userID, groupID)
 
-		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+		answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            "正在生成验证码...",
 		})
@@ -205,7 +205,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 		// Remove the button
 		msg := update.CallbackQuery.Message
 		if msg.Message != nil {
-			b.EditMessageReplyMarkup(ctx, &tgbot.EditMessageReplyMarkupParams{
+			editMessageReplyMarkup(ctx, b, &tgbot.EditMessageReplyMarkupParams{
 				ChatID:    msg.Message.Chat.ID,
 				MessageID: msg.Message.ID,
 				ReplyMarkup: &models.InlineKeyboardMarkup{
@@ -221,7 +221,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 
 		sent := sendCaptcha(ctx, b, database, userID, groupID, config.VerifyTimeout, welcomeMsgID)
 		if !sent {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.CallbackQuery.From.ID,
 				Text:   "无法发送验证码，请先私聊机器人并点击「开始」，然后重新加入群组。",
 			})
@@ -271,7 +271,7 @@ func SetVerifyButton(database *db.DB) tgbot.HandlerFunc {
 		text = trimSpace(text)
 
 		if text == "" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "用法: /setverifybutton <按钮文案>",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -284,7 +284,7 @@ func SetVerifyButton(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            fmt.Sprintf("✅ 认证按钮文案已更新为: %s", text),
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -307,7 +307,7 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 		timeoutStr = trimSpace(timeoutStr)
 
 		if timeoutStr == "" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "用法: /setverifytimeout <秒数>",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -317,7 +317,7 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 
 		timeout := strToInt(timeoutStr)
 		if timeout <= 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "请输入有效的秒数。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -330,7 +330,7 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            fmt.Sprintf("✅ 认证超时时间已更新为: %d 秒", timeout),
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -346,7 +346,7 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if update.Message.Chat.Type == "private" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            util.EscapeMd("请在群组中使用此命令。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -363,7 +363,7 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 		groupID := update.Message.Chat.ID
 		config, err := database.GetGroupConfig(groupID)
 		if err != nil || config == nil || config.WelcomeEnabled == 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            util.EscapeMd("请先使用 /enablewelcome 启用入群欢迎。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -407,16 +407,16 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		_, err = b.SendMessage(ctx, &tgbot.SendMessageParams{
-			ChatID:    update.Message.Chat.ID,
-			Text:      welcomeText,
-			ParseMode: models.ParseModeMarkdown,
+			ChatID:      update.Message.Chat.ID,
+			Text:        welcomeText,
+			ParseMode:   models.ParseModeMarkdown,
 			ReplyMarkup: replyMarkup,
 		})
 		if err != nil {
 			slog.Warn("TestVerify: MarkdownV2 failed, retrying as plain text", "error", err)
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
-				ChatID:    update.Message.Chat.ID,
-				Text:      plainWelcomeText,
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
+				ChatID:      update.Message.Chat.ID,
+				Text:        plainWelcomeText,
 				ReplyMarkup: replyMarkup,
 			})
 		}

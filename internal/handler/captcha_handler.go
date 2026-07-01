@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/ChouChiu/neptune/internal/db"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/ChouChiu/neptune/internal/db"
 )
 
 const maxCaptchaAttempts = 5
@@ -41,7 +41,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 
 		if v.Attempts >= maxCaptchaAttempts {
 			_ = database.RemovePendingVerification(userID, groupID)
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "验证失败次数过多，请重新加入群组。",
 			})
@@ -51,7 +51,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		if strings.EqualFold(text, v.CaptchaText) {
 			// Delete welcome message in the group
 			if v.WelcomeMessageID != nil {
-				b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+				deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
 					ChatID:    groupID,
 					MessageID: int(*v.WelcomeMessageID),
 				})
@@ -60,7 +60,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 			// Unrestrict user
 			if err := unrestrictUser(ctx, b, groupID, userID); err != nil {
 				slog.Error("Failed to unrestrict user after captcha", "error", err)
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID: update.Message.Chat.ID,
 					Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10001)",
 				})
@@ -71,7 +71,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 				})
 				if err != nil {
 					slog.Error("Failed to verify member permissions after captcha", "error", err)
-					b.SendMessage(ctx, &tgbot.SendMessageParams{
+					sendMessage(ctx, b, &tgbot.SendMessageParams{
 						ChatID: update.Message.Chat.ID,
 						Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10002)",
 					})
@@ -79,7 +79,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 				}
 				if !canMemberSendMessages(member) {
 					slog.Error("Member still cannot send messages after captcha", "group_id", groupID, "user_id", userID, "status", member.Type)
-					b.SendMessage(ctx, &tgbot.SendMessageParams{
+					sendMessage(ctx, b, &tgbot.SendMessageParams{
 						ChatID: update.Message.Chat.ID,
 						Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10003)",
 					})
@@ -87,7 +87,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 				}
 
 				_ = database.RemovePendingVerification(userID, groupID)
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID: update.Message.Chat.ID,
 					Text:   "✅ 验证成功！你现在可以在群组中发言了。",
 				})
@@ -103,7 +103,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		first := verifications[0]
 		remaining := maxCaptchaAttempts - first.Attempts - 1
 		if remaining > 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "❌ 验证码错误，还剩 " + intToStr(int64(remaining)) + " 次机会。",
 			})
@@ -112,7 +112,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 			for _, v := range verifications {
 				_ = database.RemovePendingVerification(userID, v.GroupID)
 			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "❌ 验证失败次数过多，请重新加入群组。",
 			})

@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"runtime/debug"
 
+	"github.com/ChouChiu/neptune/internal/db"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/ChouChiu/neptune/internal/db"
 )
 
 // loggingMiddleware logs each incoming update.

@@ -32,7 +32,9 @@ func New(dbPath string) (*DB, error) {
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Warn("Failed to close database after ping failure", "error", closeErr)
+		}
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 

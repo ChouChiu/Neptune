@@ -3,9 +3,9 @@ package handler
 import (
 	"context"
 
+	"github.com/ChouChiu/neptune/internal/util"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/ChouChiu/neptune/internal/util"
 )
 
 const helpText = `📋 命令列表
@@ -52,7 +52,7 @@ const helpText = `📋 命令列表
 // Help returns a handler that responds with the help text.
 func Help() tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            helpText,
 			ReplyParameters: util.ReplyOptions(update.Message),

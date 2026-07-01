@@ -3,10 +3,21 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/ChouChiu/neptune/internal/model"
 	"modernc.org/sqlite"
+)
+
+const (
+	groupColumns               = "group_id, welcome_enabled, welcome_message, verify_button_text, verify_timeout, votekick_enabled, rule"
+	keywordColumns             = "id, group_id, pattern, is_regex, reply_content, reply_type"
+	pendingVerificationColumns = "user_id, group_id, captcha_text, expires_at, welcome_message_id, attempts, rule_ack_done"
+	activeVoteColumns          = "vote_id, group_id, target_id, initiator_id, message_id, created_at, expires_at"
+	warningColumns             = "id, group_id, user_id, admin_id, reason, created_at"
+	reportColumns              = "id, group_id, reporter_id, reported_user_id, reported_message_id, reported_message_text, content, status, reviewed_by, reviewed_at, created_at"
+	reportColumnsWithAlias     = "r.id, r.group_id, r.reporter_id, r.reported_user_id, r.reported_message_id, r.reported_message_text, r.content, r.status, r.reviewed_by, r.reviewed_at, r.created_at"
 )
 
 // currentTimestamp returns the current Unix timestamp in seconds.
@@ -25,7 +36,7 @@ func (d *DB) InitGroup(groupID int64) error {
 // GetGroupConfig returns the configuration for a group.
 func (d *DB) GetGroupConfig(groupID int64) (*model.GroupConfig, error) {
 	var cfg model.GroupConfig
-	err := d.QueryRow("SELECT * FROM groups WHERE group_id = ?", groupID).Scan(
+	err := d.QueryRow("SELECT "+groupColumns+" FROM groups WHERE group_id = ?", groupID).Scan(
 		&cfg.GroupID, &cfg.WelcomeEnabled, &cfg.WelcomeMessage,
 		&cfg.VerifyButtonText, &cfg.VerifyTimeout, &cfg.VotekickEnabled, &cfg.Rule,
 	)
@@ -123,7 +134,7 @@ func (d *DB) GetAdminGroups(userID int64) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var groups []int64
 	for rows.Next() {
@@ -175,11 +186,11 @@ func (d *DB) AddKeyword(groupID int64, pattern string, isRegex bool, replyConten
 
 // GetKeywords returns all keyword rules for a group.
 func (d *DB) GetKeywords(groupID int64) ([]model.KeywordRule, error) {
-	rows, err := d.Query("SELECT * FROM keywords WHERE group_id = ?", groupID)
+	rows, err := d.Query("SELECT "+keywordColumns+" FROM keywords WHERE group_id = ?", groupID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var rules []model.KeywordRule
 	for rows.Next() {
@@ -237,7 +248,7 @@ func (d *DB) SetRuleAckDone(userID, groupID int64) error {
 func (d *DB) GetPendingVerification(userID, groupID int64) (*model.PendingVerification, error) {
 	var pv model.PendingVerification
 	err := d.QueryRow(
-		"SELECT * FROM pending_verifications WHERE user_id = ? AND group_id = ?", userID, groupID,
+		"SELECT "+pendingVerificationColumns+" FROM pending_verifications WHERE user_id = ? AND group_id = ?", userID, groupID,
 	).Scan(&pv.UserID, &pv.GroupID, &pv.CaptchaText, &pv.ExpiresAt, &pv.WelcomeMessageID, &pv.Attempts, &pv.RuleAckDone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -258,12 +269,12 @@ func (d *DB) RemovePendingVerification(userID, groupID int64) error {
 func (d *DB) GetPendingVerificationsByUser(userID int64) ([]model.PendingVerification, error) {
 	now := currentTimestamp()
 	rows, err := d.Query(
-		"SELECT * FROM pending_verifications WHERE user_id = ? AND expires_at > ?", userID, now,
+		"SELECT "+pendingVerificationColumns+" FROM pending_verifications WHERE user_id = ? AND expires_at > ?", userID, now,
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var verifications []model.PendingVerification
 	for rows.Next() {
@@ -310,7 +321,7 @@ func (d *DB) CreateActiveVote(voteID string, groupID, targetID, initiatorID, cre
 // GetActiveVote returns an active vote by ID.
 func (d *DB) GetActiveVote(voteID string) (*model.ActiveVote, error) {
 	var v model.ActiveVote
-	err := d.QueryRow("SELECT * FROM active_votes WHERE vote_id = ?", voteID).Scan(
+	err := d.QueryRow("SELECT "+activeVoteColumns+" FROM active_votes WHERE vote_id = ?", voteID).Scan(
 		&v.VoteID, &v.GroupID, &v.TargetID, &v.InitiatorID, &v.MessageID, &v.CreatedAt, &v.ExpiresAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -327,7 +338,7 @@ func (d *DB) GetActiveVoteForTarget(groupID, targetID int64) (*model.ActiveVote,
 	now := currentTimestamp()
 	var v model.ActiveVote
 	err := d.QueryRow(
-		"SELECT * FROM active_votes WHERE group_id = ? AND target_id = ? AND expires_at > ?",
+		"SELECT "+activeVoteColumns+" FROM active_votes WHERE group_id = ? AND target_id = ? AND expires_at > ?",
 		groupID, targetID, now,
 	).Scan(&v.VoteID, &v.GroupID, &v.TargetID, &v.InitiatorID, &v.MessageID, &v.CreatedAt, &v.ExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -343,7 +354,7 @@ func (d *DB) GetActiveVoteForTarget(groupID, targetID int64) (*model.ActiveVote,
 func (d *DB) GetLastVoteByInitiator(groupID, initiatorID int64) (*model.ActiveVote, error) {
 	var v model.ActiveVote
 	err := d.QueryRow(
-		"SELECT * FROM active_votes WHERE group_id = ? AND initiator_id = ? ORDER BY created_at DESC LIMIT 1",
+		"SELECT "+activeVoteColumns+" FROM active_votes WHERE group_id = ? AND initiator_id = ? ORDER BY created_at DESC LIMIT 1",
 		groupID, initiatorID,
 	).Scan(&v.VoteID, &v.GroupID, &v.TargetID, &v.InitiatorID, &v.MessageID, &v.CreatedAt, &v.ExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -396,7 +407,7 @@ func (d *DB) GetVoteCounts(voteID string) (yes, no int, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	for rows.Next() {
 		var choice, cnt int
@@ -429,12 +440,12 @@ func (d *DB) CleanExpiredVotes() error {
 func (d *DB) GetExpiredVotes() ([]model.ActiveVote, error) {
 	now := currentTimestamp()
 	rows, err := d.Query(
-		"SELECT * FROM active_votes WHERE expires_at < ? AND message_id IS NOT NULL", now,
+		"SELECT "+activeVoteColumns+" FROM active_votes WHERE expires_at < ? AND message_id IS NOT NULL", now,
 	)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var votes []model.ActiveVote
 	for rows.Next() {
@@ -507,18 +518,18 @@ func (d *DB) GetWarnings(groupID int64, userID *int64) ([]model.Warning, error) 
 
 	if userID != nil {
 		rows, err = d.Query(
-			"SELECT * FROM warnings WHERE group_id = ? AND user_id = ? ORDER BY created_at DESC",
+			"SELECT "+warningColumns+" FROM warnings WHERE group_id = ? AND user_id = ? ORDER BY created_at DESC",
 			groupID, *userID,
 		)
 	} else {
 		rows, err = d.Query(
-			"SELECT * FROM warnings WHERE group_id = ? ORDER BY created_at DESC", groupID,
+			"SELECT "+warningColumns+" FROM warnings WHERE group_id = ? ORDER BY created_at DESC", groupID,
 		)
 	}
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var warnings []model.Warning
 	for rows.Next() {
@@ -533,7 +544,7 @@ func (d *DB) GetWarnings(groupID int64, userID *int64) ([]model.Warning, error) 
 
 // GetAllWarnings returns all warnings, optionally filtered by admin's groups.
 func (d *DB) GetAllWarnings(userID *int64) ([]model.Warning, error) {
-	query := "SELECT w.* FROM warnings w"
+	query := "SELECT w.id, w.group_id, w.user_id, w.admin_id, w.reason, w.created_at FROM warnings w"
 	var args []interface{}
 
 	if userID != nil {
@@ -546,7 +557,7 @@ func (d *DB) GetAllWarnings(userID *int64) ([]model.Warning, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var warnings []model.Warning
 	for rows.Next() {
@@ -574,7 +585,7 @@ func (d *DB) AddReport(groupID, reporterID, reportedUserID int64, reportedMessag
 
 // GetReports returns reports, optionally filtered by status and admin's groups.
 func (d *DB) GetReports(status *string, userID *int64) ([]model.Report, error) {
-	query := "SELECT r.* FROM reports r"
+	query := "SELECT " + reportColumnsWithAlias + " FROM reports r"
 	var conditions []string
 	var args []interface{}
 
@@ -597,7 +608,7 @@ func (d *DB) GetReports(status *string, userID *int64) ([]model.Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer closeRows(rows)
 
 	var reports []model.Report
 	for rows.Next() {
@@ -616,7 +627,7 @@ func (d *DB) GetReports(status *string, userID *int64) ([]model.Report, error) {
 
 // GetReport returns a single report by ID.
 func (d *DB) GetReport(reportID int64, userID *int64) (*model.Report, error) {
-	query := "SELECT r.* FROM reports r"
+	query := "SELECT " + reportColumnsWithAlias + " FROM reports r"
 	var args []interface{}
 	conditions := []string{"r.id = ?"}
 	args = append(args, reportID)
@@ -707,6 +718,12 @@ func joinStrings(strs []string, sep string) string {
 		result += s
 	}
 	return result
+}
+
+func closeRows(rows *sql.Rows) {
+	if err := rows.Close(); err != nil {
+		slog.Warn("Failed to close database rows", "error", err)
+	}
 }
 
 // ── Legacy Compatibility ──────────────────────────────────────────

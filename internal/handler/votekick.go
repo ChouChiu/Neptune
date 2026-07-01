@@ -6,16 +6,16 @@ import (
 	"log/slog"
 	"strings"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 const (
-	voteThreshold       = 5
-	voteDuration        = 300 // 5 minutes
-	initiatorCooldown   = 60  // 1 minute
+	voteThreshold     = 5
+	voteDuration      = 300 // 5 minutes
+	initiatorCooldown = 60  // 1 minute
 )
 
 // buildVoteText builds the vote display text.
@@ -46,7 +46,7 @@ func EnableVotekick(database *db.DB) tgbot.HandlerFunc {
 
 		config, _ := database.GetGroupConfig(groupID)
 		if config != nil && config.VotekickEnabled != 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "投票踢人已经处于启用状态。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -59,7 +59,7 @@ func EnableVotekick(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            "✅ 投票踢人已启用。使用 /kick（回复目标消息）发起投票。",
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -77,7 +77,7 @@ func DisableVotekick(database *db.DB) tgbot.HandlerFunc {
 
 		config, _ := database.GetGroupConfig(groupID)
 		if config == nil || config.VotekickEnabled == 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "投票踢人已经处于禁用状态。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -90,7 +90,7 @@ func DisableVotekick(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            "✅ 投票踢人已禁用。",
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -108,7 +108,7 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 
 		config, _ := database.GetGroupConfig(groupID)
 		if config == nil || config.VotekickEnabled == 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "投票踢人未启用，请让管理员使用 /enablevotekick 启用。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -134,7 +134,7 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 		initiatorID := update.Message.From.ID
 
 		if targetID == initiatorID {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "❌ 不能对自己发起投票。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -148,7 +148,7 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 			UserID: targetID,
 		})
 		if err == nil && (member.Type == models.ChatMemberTypeAdministrator || member.Type == models.ChatMemberTypeOwner) {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "❌ 不能对管理员发起投票。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -158,7 +158,7 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 
 		existing, _ := database.GetActiveVoteForTarget(groupID, targetID)
 		if existing != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "❌ 该用户已有进行中的投票。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -172,7 +172,7 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 			elapsed := now - lastVote.CreatedAt
 			if elapsed < initiatorCooldown {
 				remaining := initiatorCooldown - elapsed
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID:          update.Message.Chat.ID,
 					Text:            fmt.Sprintf("❌ 冷却中，请等待 %d 秒后再试。", remaining),
 					ReplyParameters: util.ReplyOptions(update.Message),
@@ -233,7 +233,7 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 
 		vote, err := database.GetActiveVote(voteID)
 		if err != nil || vote == nil {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "投票已结束。",
 			})
@@ -243,13 +243,13 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 		now := util.CurrentTimestamp()
 		if now >= vote.ExpiresAt {
 			if vote.MessageID != nil {
-				b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+				deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
 					ChatID:    vote.GroupID,
 					MessageID: int(*vote.MessageID),
 				})
 			}
 			_ = database.DeleteActiveVote(voteID)
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "投票已过期。",
 			})
@@ -257,7 +257,7 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if voterID == vote.TargetID {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "你不能参与关于自己的投票。",
 			})
@@ -270,7 +270,7 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 		if !added {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "你已经投过票了。",
 			})
@@ -305,7 +305,7 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 		text := buildVoteText(targetName, initiatorName, yesCount, noCount, vote.ExpiresAt)
 
 		if vote.MessageID != nil {
-			b.EditMessageText(ctx, &tgbot.EditMessageTextParams{
+			editMessageText(ctx, b, &tgbot.EditMessageTextParams{
 				ChatID:    vote.GroupID,
 				MessageID: int(*vote.MessageID),
 				Text:      text,
@@ -322,7 +322,7 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 
 		if yesCount >= voteThreshold {
 			if vote.MessageID != nil {
-				b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+				deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
 					ChatID:    vote.GroupID,
 					MessageID: int(*vote.MessageID),
 				})
@@ -333,18 +333,18 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 				UserID: vote.TargetID,
 			})
 			if banErr != nil {
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID: vote.GroupID,
 					Text:   fmt.Sprintf("⚠️ 投票通过，但无法移出 %s（权限不足）。", targetName),
 				})
 			} else {
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID: vote.GroupID,
 					Text:   fmt.Sprintf("✅ 投票通过，已将 %s 移出群组。", targetName),
 				})
 			}
 			_ = database.DeleteActiveVote(voteID)
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "投票通过！",
 			})
@@ -355,7 +355,7 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 		if choice == 1 {
 			choiceText = "赞成"
 		}
-		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+		answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            fmt.Sprintf("已投%s。", choiceText),
 		})

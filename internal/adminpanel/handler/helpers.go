@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChouChiu/neptune/internal/adminpanel/sessionctx"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/model"
 )
@@ -16,10 +17,7 @@ import (
 // getUserID extracts the admin user ID from the request context.
 // Context key "admin_user_id" is set by adminpanel.SessionAuthMiddleware.
 func getUserID(r *http.Request) int64 {
-	if v, ok := r.Context().Value("admin_user_id").(int64); ok {
-		return v
-	}
-	return 0
+	return sessionctx.UserID(r)
 }
 
 // handleApproved processes an approved report: deletes the message, adds a warning,
@@ -53,7 +51,7 @@ func handleApproved(database *db.DB, botToken string, report *model.Report) {
 
 	reporterMsg := fmt.Sprintf(
 		"✅ 你的举报已通过处理\n\n📋 举报编号：#%d\n📝 举报原因：%s\n🏠 群组：%d\n\n违规消息已删除，用户已被警告。感谢你维护群组秩序！",
-		report.ReportedUserID, report.Content, report.GroupID,
+		report.ID, report.Content, report.GroupID,
 	)
 	tgAPICall(ctx, botToken, "sendMessage", map[string]any{
 		"chat_id": report.ReporterID,
@@ -67,7 +65,7 @@ func handleDismissed(botToken string, report *model.Report) {
 
 	reporterMsg := fmt.Sprintf(
 		"❌ 你的举报未通过审核\n\n📋 举报编号：#%d\n📝 举报原因：%s\n🏠 群组：%d\n\n经管理员审核，该举报不符合处理条件。如有疑问请联系群管理员。",
-		report.ReportedUserID, report.Content, report.GroupID,
+		report.ID, report.Content, report.GroupID,
 	)
 	tgAPICall(ctx, botToken, "sendMessage", map[string]any{
 		"chat_id": report.ReporterID,
@@ -98,7 +96,11 @@ func tgAPICall(ctx context.Context, botToken, method string, body map[string]any
 		slog.Error("tgAPICall error", "method", method, "error", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			slog.Warn("tgAPICall response close error", "method", method, "error", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("tgAPICall failed", "method", method, "status", resp.StatusCode)

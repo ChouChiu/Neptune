@@ -36,7 +36,7 @@ func EscapeMarkdownCode(text string) string {
 
 // EscapeMarkdownLinkUrl escapes closing parenthesis and backslashes in URLs.
 func EscapeMarkdownLinkUrl(url string) string {
-	re := regexp.MustCompile("[)\\\\]")
+	re := regexp.MustCompile(`[)\\]`)
 	return re.ReplaceAllString(url, "\\$0")
 }
 

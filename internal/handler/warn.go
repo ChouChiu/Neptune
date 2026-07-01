@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 // Warn returns a handler for the /warn command.
@@ -39,7 +39,7 @@ func Warn(database *db.DB) tgbot.HandlerFunc {
 			UserID: target.ID,
 		})
 		if err == nil && (member.Type == models.ChatMemberTypeAdministrator || member.Type == models.ChatMemberTypeOwner) {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            util.EscapeMd("涅普不能警告管理员哦～"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -76,7 +76,7 @@ func Warn(database *db.DB) tgbot.HandlerFunc {
 			)
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            text,
 			ParseMode:       models.ParseModeMarkdown,

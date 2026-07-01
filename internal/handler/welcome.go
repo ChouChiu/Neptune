@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"time"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/model"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 const (
@@ -42,7 +42,7 @@ func SetWelcome(database *db.DB) tgbot.HandlerFunc {
 		text = trimSpace(text)
 
 		if text == "" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "用法: /setwelcome <消息>\n支持占位符: {nickname} {userid} {groupname}",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -51,7 +51,7 @@ func SetWelcome(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if len(text) > 4096 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "欢迎消息过长（最大 4096 字符）。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -64,7 +64,7 @@ func SetWelcome(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            "✅ 欢迎消息已更新。",
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -85,7 +85,7 @@ func EnableWelcome(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            "✅ 入群欢迎已启用。",
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -106,7 +106,7 @@ func DisableWelcome(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            "✅ 入群欢迎已禁用。",
 			ReplyParameters: util.ReplyOptions(update.Message),
@@ -134,7 +134,7 @@ func WelcomeNewMembers(database *db.DB, configuredBotUsername string) tgbot.Hand
 
 		_ = database.CleanExpiredVerifications()
 
-		b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+		deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
 			ChatID:    groupID,
 			MessageID: update.Message.ID,
 		})
@@ -164,13 +164,29 @@ func restrictUser(ctx context.Context, b *tgbot.Bot, groupID, userID int64) erro
 }
 
 func unrestrictUser(ctx context.Context, b *tgbot.Bot, groupID, userID int64) error {
-	_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+	permissions, err := defaultChatPermissions(ctx, b, groupID)
+	if err != nil {
+		return err
+	}
+
+	_, err = b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
 		ChatID:                        groupID,
 		UserID:                        userID,
-		Permissions:                   unrestrictedChatPermissions(),
+		Permissions:                   permissions,
 		UseIndependentChatPermissions: true,
 	})
 	return err
+}
+
+func defaultChatPermissions(ctx context.Context, b *tgbot.Bot, groupID int64) (*models.ChatPermissions, error) {
+	chat, err := b.GetChat(ctx, &tgbot.GetChatParams{ChatID: groupID})
+	if err != nil {
+		return nil, err
+	}
+	if chat.Permissions != nil {
+		return chat.Permissions, nil
+	}
+	return &models.ChatPermissions{CanSendMessages: true}, nil
 }
 
 func restrictedChatPermissions() *models.ChatPermissions {
@@ -191,27 +207,6 @@ func restrictedChatPermissions() *models.ChatPermissions {
 		CanManageTopics:       false,
 		CanEditTag:            false,
 		CanReactToMessages:    false,
-	}
-}
-
-func unrestrictedChatPermissions() *models.ChatPermissions {
-	return &models.ChatPermissions{
-		CanSendMessages:       true,
-		CanSendAudios:         true,
-		CanSendDocuments:      true,
-		CanSendPhotos:         true,
-		CanSendVideos:         true,
-		CanSendVideoNotes:     true,
-		CanSendVoiceNotes:     true,
-		CanSendPolls:          true,
-		CanSendOtherMessages:  true,
-		CanAddWebPagePreviews: true,
-		CanChangeInfo:         true,
-		CanInviteUsers:        true,
-		CanPinMessages:        true,
-		CanManageTopics:       true,
-		CanEditTag:            true,
-		CanReactToMessages:    true,
 	}
 }
 
@@ -361,7 +356,7 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 	}
 	if botUsername == "" {
 		slog.Error("Failed to build verify URL: bot username is empty", "group_id", req.groupID, "user_id", userID)
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID: req.groupID,
 			Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
 		})
@@ -408,10 +403,11 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 // scheduleWelcomeMessageDeletion deletes the welcome message after a delay
 // if the user hasn't completed verification by then.
 func scheduleWelcomeMessageDeletion(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, groupID int64, welcomeMsgID int64) {
+	deleteCtx := context.WithoutCancel(ctx)
 	go func() {
 		select {
 		case <-time.After(welcomeMessageDeleteDelay):
-		case <-ctx.Done():
+		case <-deleteCtx.Done():
 			return
 		}
 
@@ -427,7 +423,7 @@ func scheduleWelcomeMessageDeletion(ctx context.Context, b *tgbot.Bot, database 
 		}
 
 		// Delete the welcome message from the group
-		if _, err := b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+		if _, err := b.DeleteMessage(deleteCtx, &tgbot.DeleteMessageParams{
 			ChatID:    groupID,
 			MessageID: int(welcomeMsgID),
 		}); err != nil {

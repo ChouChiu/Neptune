@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/ChouChiu/neptune/internal/adminpanel/components"
@@ -23,6 +24,8 @@ func ListWarnings(database *db.DB) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		components.WarningRows(warnings).Render(r.Context(), w)
+		if err := components.WarningRows(warnings).Render(r.Context(), w); err != nil {
+			slog.Error("Failed to render warning rows", "error", err)
+		}
 	}
 }

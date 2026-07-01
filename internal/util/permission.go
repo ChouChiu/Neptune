@@ -3,9 +3,9 @@ package util
 import (
 	"context"
 
+	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/ChouChiu/neptune/internal/db"
 )
 
 // CheckAdminPermission checks if a user has admin permission.

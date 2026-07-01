@@ -59,9 +59,4 @@ func TestVerificationPermissionsIncludeTelegramFields(t *testing.T) {
 	if restricted.CanEditTag || restricted.CanReactToMessages {
 		t.Fatalf("restricted permissions should disable edit tag and reactions")
 	}
-
-	unrestricted := unrestrictedChatPermissions()
-	if !unrestricted.CanEditTag || !unrestricted.CanReactToMessages {
-		t.Fatalf("unrestricted permissions should enable edit tag and reactions")
-	}
 }

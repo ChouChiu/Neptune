@@ -11,13 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	tgbot "github.com/go-telegram/bot"
 	"github.com/ChouChiu/neptune/internal/adminpanel"
 	"github.com/ChouChiu/neptune/internal/bot"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/github"
 	"github.com/ChouChiu/neptune/internal/model"
+	tgbot "github.com/go-telegram/bot"
 )
+
+const maxGitHubWebhookBodyBytes = 5 << 20 // 5 MiB
 
 func main() {
 	// Initialize log collector for admin panel
@@ -44,7 +46,9 @@ func main() {
 
 	// Parse RELEASE_CHANNEL_ID
 	if id := os.Getenv("RELEASE_CHANNEL_ID"); id != "" {
-		fmt.Sscanf(id, "%d", &cfg.ReleaseChannelID)
+		if _, err := fmt.Sscanf(id, "%d", &cfg.ReleaseChannelID); err != nil {
+			slog.Warn("Invalid RELEASE_CHANNEL_ID", "value", id, "error", err)
+		}
 	}
 
 	// Initialize database
@@ -57,11 +61,15 @@ func main() {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			slog.Warn("Failed to close database", "error", err)
+		}
+	}()
 
-	// Apply schema
-	if err := database.ApplySchema(); err != nil {
-		slog.Error("Failed to apply schema", "error", err)
+	// Apply schema and migrations
+	if err := database.InitDatabase(); err != nil {
+		slog.Error("Failed to initialize database", "error", err)
 		os.Exit(1)
 	}
 
@@ -87,7 +95,9 @@ func main() {
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
+		if _, err := fmt.Fprint(w, "OK"); err != nil {
+			slog.Warn("Failed to write health response", "error", err)
+		}
 	})
 
 	// Admin panel — ServeMux auto-redirects /admin → /admin/
@@ -106,7 +116,12 @@ func main() {
 			return
 		}
 
-		body, err := io.ReadAll(r.Body)
+		if cfg.ReleaseChannelID == 0 {
+			http.Error(w, "Release channel not configured", http.StatusServiceUnavailable)
+			return
+		}
+
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxGitHubWebhookBodyBytes))
 		if err != nil {
 			http.Error(w, "Failed to read body", http.StatusBadRequest)
 			return
@@ -122,7 +137,9 @@ func main() {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
+		if _, err := fmt.Fprint(w, "OK"); err != nil {
+			slog.Warn("Failed to write webhook response", "error", err)
+		}
 	})
 
 	// Set webhook endpoint (for initial setup)
@@ -160,7 +177,9 @@ func main() {
 			slog.Warn("Failed to set commands", "error", err)
 		}
 
-		fmt.Fprintf(w, "Webhook set to %s", webhookURL)
+		if _, err := fmt.Fprintf(w, "Webhook set to %s", webhookURL); err != nil {
+			slog.Warn("Failed to write set-webhook response", "error", err)
+		}
 	})
 
 	// Start bot workers

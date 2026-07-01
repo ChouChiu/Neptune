@@ -13,6 +13,8 @@ import (
 
 const sessionTTL = 86400 // 24 hours
 
+const telegramAuthMaxAge = 24 * time.Hour
+
 // VerifyTelegramAuth verifies the Telegram Login Widget data using HMAC-SHA256.
 // The secret_key is SHA256(bot_token), and the signature is HMAC(secret_key, dataCheckString).
 func VerifyTelegramAuth(botToken string, data map[string]string) bool {
@@ -44,7 +46,21 @@ func VerifyTelegramAuth(botToken string, data map[string]string) bool {
 	mac.Write([]byte(dataCheckString))
 	computed := hex.EncodeToString(mac.Sum(nil))
 
-	return timingSafeEqual(computed, hash)
+	if !timingSafeEqual(computed, hash) {
+		return false
+	}
+
+	authDate, err := strconv.ParseInt(data["auth_date"], 10, 64)
+	if err != nil || authDate <= 0 {
+		return false
+	}
+	authTime := time.Unix(authDate, 0)
+	now := time.Now()
+	if authTime.After(now.Add(5*time.Minute)) || now.Sub(authTime) > telegramAuthMaxAge {
+		return false
+	}
+
+	return true
 }
 
 // SignSession creates a signed session token: userId:expiresAt:hmac_signature.

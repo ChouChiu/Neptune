@@ -131,26 +131,19 @@ templ PageScripts(botUsername string) {
 	<script>
 	'use strict';
 
-	// ── API helper ──
-	var __sessionToken = localStorage.getItem('nep_token') || '';
-	var API = {
-		fetch: function(url, opts) {
-			opts = opts || {};
-			opts.credentials = 'same-origin';
-			if (__sessionToken) {
-				opts.headers = Object.assign({ 'Authorization': 'Bearer ' + __sessionToken }, opts.headers);
-				// Also send token as query param for reliability (some browsers/proxies strip headers)
-				var sep = url.indexOf('?') >= 0 ? '&' : '?';
-				url = url + sep + 'token=' + encodeURIComponent(__sessionToken);
-			}
-			if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
-				opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers);
-				opts.body = JSON.stringify(opts.body);
-			}
-			return fetch(url, opts).then(function(r) {
-				if (r.status === 401) { window.__adminUser = null; localStorage.removeItem('nep_token'); __sessionToken = ''; window.__render(); throw new Error('Unauthorized'); }
-				return r;
-			});
+		// ── API helper ──
+		var API = {
+			fetch: function(url, opts) {
+				opts = opts || {};
+				opts.credentials = 'same-origin';
+				if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+					opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers);
+					opts.body = JSON.stringify(opts.body);
+				}
+				return fetch(url, opts).then(function(r) {
+					if (r.status === 401) { window.__adminUser = null; window.__render(); throw new Error('Unauthorized'); }
+					return r;
+				});
 		},
 		get: function(url) { return this.fetch(url).then(function(r) { return r.text(); }); },
 		post: function(url, body) { return this.fetch(url, { method: 'POST', body: body }).then(function(r) { return r.json(); }); }
@@ -222,12 +215,11 @@ templ PageScripts(botUsername string) {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			credentials: 'same-origin',
-			body: JSON.stringify(data)
-		}).then(function(r) { return r.json(); }).then(function(res) {
-			if (res.ok) {
-				if (res.token) { __sessionToken = res.token; localStorage.setItem('nep_token', res.token); }
-				var spinner = document.getElementById('login-loading');
-				if (spinner) spinner.innerHTML = '<span class="text-green-400">登录成功 ✓</span>';
+				body: JSON.stringify(data)
+			}).then(function(r) { return r.json(); }).then(function(res) {
+				if (res.ok) {
+					var spinner = document.getElementById('login-loading');
+					if (spinner) spinner.innerHTML = '<span class="text-green-400">登录成功 ✓</span>';
 				setTimeout(function() {
 					document.body.setAttribute('data-state', 'app');
 					window.__adminUser = res.user;
@@ -442,9 +434,7 @@ templ PageScripts(botUsername string) {
 		var container = document.getElementById('log-container');
 		if (!container) return;
 
-		var token = __sessionToken || '';
-		var url = '/admin/api/logs/stream?token=' + encodeURIComponent(token);
-		__logEventSource = new EventSource(url);
+			__logEventSource = new EventSource('/admin/api/logs/stream');
 
 		__logEventSource.onopen = function() {
 			if (statusEl) {

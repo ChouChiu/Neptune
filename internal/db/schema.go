@@ -1,10 +1,13 @@
 package db
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -116,6 +119,8 @@ CREATE INDEX IF NOT EXISTS idx_kv_expires ON kv(expires_at);
 // migrationsDir is the path to the migrations directory.
 const migrationsDir = "migrations"
 
+var addColumnRe = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([A-Za-z_][A-Za-z0-9_]*)\s+ADD\s+COLUMN\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
+
 // ApplySchema creates the base schema if tables don't exist.
 func (d *DB) ApplySchema() error {
 	slog.Info("Applying base schema...")
@@ -178,8 +183,7 @@ func (d *DB) ApplyMigrations() error {
 		}
 
 		slog.Info("Applying migration", "version", version)
-		_, err = d.Exec(string(content))
-		if err != nil {
+		if err := d.applyMigrationSQL(string(content)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", version, err)
 		}
 
@@ -193,6 +197,80 @@ func (d *DB) ApplyMigrations() error {
 	}
 
 	return nil
+}
+
+func (d *DB) applyMigrationSQL(sqlText string) error {
+	sqlText = stripSQLLineComments(sqlText)
+	for _, stmt := range strings.Split(sqlText, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+
+		if d.addedColumnAlreadyExists(stmt) {
+			continue
+		}
+
+		if _, err := d.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func stripSQLLineComments(sqlText string) string {
+	lines := strings.Split(sqlText, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func (d *DB) addedColumnAlreadyExists(stmt string) bool {
+	matches := addColumnRe.FindStringSubmatch(stmt)
+	if len(matches) != 3 {
+		return false
+	}
+	exists, err := d.columnExists(matches[1], matches[2])
+	if err != nil {
+		slog.Warn("Failed to check migration column existence", "table", matches[1], "column", matches[2], "error", err)
+		return false
+	}
+	return exists
+}
+
+func (d *DB) columnExists(table, column string) (bool, error) {
+	rows, err := d.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			slog.Warn("Failed to close PRAGMA rows", "error", closeErr)
+		}
+	}()
+
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return false, err
+		}
+		if strings.EqualFold(name, column) {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	return false, nil
 }
 
 // InitDatabase applies schema and migrations.

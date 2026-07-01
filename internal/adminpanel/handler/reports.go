@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"github.com/ChouChiu/neptune/internal/adminpanel/components"
 	"github.com/ChouChiu/neptune/internal/db"
 )
+
+const maxResolveReportBodyBytes = 4 << 10 // 4 KiB
 
 // ListReports returns an HTMX handler that renders the reports list as HTML.
 func ListReports(database *db.DB) http.HandlerFunc {
@@ -32,7 +35,9 @@ func ListReports(database *db.DB) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		components.ReportCards(reports).Render(r.Context(), w)
+		if err := components.ReportCards(reports).Render(r.Context(), w); err != nil {
+			slog.Error("Failed to render report cards", "error", err)
+		}
 	}
 }
 
@@ -55,7 +60,7 @@ func ResolveReport(database *db.DB, botToken string) http.HandlerFunc {
 		var body struct {
 			Status string `json:"status"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxResolveReportBodyBytes)).Decode(&body); err != nil {
 			writeErrJSON(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
@@ -84,12 +89,16 @@ func ResolveReport(database *db.DB, botToken string) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok":true}`))
+		if _, err := w.Write([]byte(`{"ok":true}`)); err != nil {
+			slog.Warn("Failed to write resolve report response", "error", err)
+		}
 	}
 }
 
 func writeErrJSON(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		slog.Warn("Failed to write error JSON", "error", err)
+	}
 }

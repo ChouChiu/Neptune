@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	telegramAPI     = "https://api.telegram.org"
+	telegramAPI      = "https://api.telegram.org"
 	maxMessageLength = 4096
 	maxRetries       = 3
 	retryDelay       = 1 * time.Second
@@ -33,12 +33,12 @@ type GitHubRelease struct {
 
 // ReleaseDetails holds the release information.
 type ReleaseDetails struct {
-	TagName string  `json:"tag_name"`
-	Name    *string `json:"name"`
-	Body    *string `json:"body"`
-	HTMLURL string  `json:"html_url"`
-	PreRelease bool `json:"prerelease"`
-	Draft   bool    `json:"draft"`
+	TagName    string  `json:"tag_name"`
+	Name       *string `json:"name"`
+	Body       *string `json:"body"`
+	HTMLURL    string  `json:"html_url"`
+	PreRelease bool    `json:"prerelease"`
+	Draft      bool    `json:"draft"`
 }
 
 // VerifySignature verifies the HMAC-SHA256 signature of a GitHub webhook payload.
@@ -252,7 +252,9 @@ func SendToTelegram(ctx context.Context, botToken string, channelID string, text
 		}
 
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			slog.Warn("Release response close error", "error", err)
+		}
 
 		if resp.StatusCode == http.StatusOK {
 			slog.Info("Release sent successfully", "attempt", attempt)

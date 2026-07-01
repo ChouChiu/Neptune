@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/ChouChiu/neptune/internal/adminpanel/components"
 	"github.com/ChouChiu/neptune/internal/adminpanel/handler"
 	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 )
+
+const maxLoginBodyBytes = 32 << 10 // 32 KiB
 
 // NewServer creates a Chi router with all admin panel routes registered.
 func NewServer(database *db.DB, botToken, botUsername string, logCollector *LogCollector) http.Handler {
@@ -23,7 +26,9 @@ func NewServer(database *db.DB, botToken, botUsername string, logCollector *LogC
 	// Serve the admin SPA page
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		components.Layout(botUsername).Render(r.Context(), w)
+		if err := components.Layout(botUsername).Render(r.Context(), w); err != nil {
+			slog.Error("Failed to render admin layout", "error", err)
+		}
 	})
 
 	// Auth endpoints (no session required)
@@ -42,10 +47,14 @@ func NewServer(database *db.DB, botToken, botUsername string, logCollector *LogC
 	return r
 }
 
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 // handleLogin processes Telegram Login Widget authentication.
 func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dec := json.NewDecoder(r.Body)
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxLoginBodyBytes))
 		dec.UseNumber()
 		var raw map[string]any
 		if err := dec.Decode(&raw); err != nil {
@@ -103,12 +112,14 @@ func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "nep_session",
 			Value:    session,
-			Path:     "/",
+			Path:     "/admin",
 			MaxAge:   sessionTTL,
 			HttpOnly: true,
+			Secure:   isSecureRequest(r),
+			SameSite: http.SameSiteLaxMode,
 		})
 
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user, "token": session})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": user})
 	}
 }
 
@@ -123,15 +134,15 @@ func handleMe(botToken string) http.HandlerFunc {
 
 		userID := VerifySession(botToken, cookie.Value)
 		if userID == 0 {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "nep_session",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-		})
+			http.SetCookie(w, &http.Cookie{
+				Name:     "nep_session",
+				Value:    "",
+				Path:     "/admin",
+				MaxAge:   -1,
+				HttpOnly: true,
+				Secure:   isSecureRequest(r),
+				SameSite: http.SameSiteLaxMode,
+			})
 			writeJSON(w, http.StatusOK, map[string]any{"user": nil})
 			return
 		}
@@ -189,7 +200,10 @@ func handleLogsStream(collector *LogCollector) http.HandlerFunc {
 		defer collector.Unsubscribe(ch)
 
 		// Send initial comment to establish connection
-		fmt.Fprintf(w, ": connected\n\n")
+		if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
+			slog.Warn("Failed to write log stream prelude", "error", err)
+			return
+		}
 		flusher.Flush()
 
 		ctx := r.Context()
@@ -201,8 +215,15 @@ func handleLogsStream(collector *LogCollector) http.HandlerFunc {
 				if !ok {
 					return
 				}
-				data, _ := json.Marshal(entry)
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				data, err := json.Marshal(entry)
+				if err != nil {
+					slog.Warn("Failed to marshal log entry", "error", err)
+					continue
+				}
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+					slog.Warn("Failed to write log stream entry", "error", err)
+					return
+				}
 				flusher.Flush()
 			}
 		}

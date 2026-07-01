@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 // ID returns a handler for the /id command.
@@ -19,7 +19,7 @@ func ID(database *db.DB) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		chat := update.Message.Chat
 		if chat.Type == "private" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd("请在群组中使用此命令获取群组 ID。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -40,7 +40,7 @@ func ID(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		text := fmt.Sprintf("当前群组 ID: `%d`", chat.ID)
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          chat.ID,
 			Text:            text,
 			ParseMode:       models.ParseModeMarkdown,
@@ -55,7 +55,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		chat := update.Message.Chat
 		if chat.Type != "private" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd("请在私聊中使用此命令。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -73,7 +73,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if args == "" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd("用法: /connect <群组ID>"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -84,7 +84,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 
 		groupID, err := strconv.ParseInt(args, 10, 64)
 		if err != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd("无效的群组 ID。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -103,7 +103,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 			UserID: update.Message.From.ID,
 		})
 		if err != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd(fmt.Sprintf("无法验证群组权限: %v", err)),
 				ParseMode:       models.ParseModeMarkdown,
@@ -113,7 +113,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if member.Type != models.ChatMemberTypeAdministrator && member.Type != models.ChatMemberTypeOwner {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd("你不是该群组的管理员，无法绑定。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -123,7 +123,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if err := database.ConnectAdmin(update.Message.From.ID, groupID); err != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          chat.ID,
 				Text:            util.EscapeMd("绑定失败，请稍后重试。"),
 				ParseMode:       models.ParseModeMarkdown,
@@ -132,7 +132,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          chat.ID,
 			Text:            util.EscapeMd(fmt.Sprintf("已绑定到群组 %d。现在可以在私聊中管理该群组。", groupID)),
 			ParseMode:       models.ParseModeMarkdown,
@@ -146,7 +146,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 func Switch(database *db.DB) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.Message.Chat.Type != "private" {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "请在私聊中使用此命令。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -160,7 +160,7 @@ func Switch(database *db.DB) tgbot.HandlerFunc {
 
 		groupIDs, err := database.GetAdminGroups(update.Message.From.ID)
 		if err != nil || len(groupIDs) == 0 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "你还没有绑定任何群组。使用 /connect <群组ID> 绑定。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -171,7 +171,7 @@ func Switch(database *db.DB) tgbot.HandlerFunc {
 		currentGroupID, _ := database.GetAdminGroupID(update.Message.From.ID)
 
 		buttons := buildSwitchButtons(groupIDs, currentGroupID)
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID: update.Message.Chat.ID,
 			Text:   "选择当前管理的群组：",
 			ReplyMarkup: &models.InlineKeyboardMarkup{
@@ -199,7 +199,7 @@ func SwitchCallback(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+		answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            fmt.Sprintf("已切换到群组 %d", groupID),
 		})
@@ -217,7 +217,7 @@ func SwitchCallback(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		buttons := buildSwitchButtons(groupIDs, &groupID)
-		b.EditMessageText(ctx, &tgbot.EditMessageTextParams{
+		editMessageText(ctx, b, &tgbot.EditMessageTextParams{
 			ChatID:      msg.Chat.ID,
 			MessageID:   msg.ID,
 			Text:        "选择当前管理的群组：",

@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"strings"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 func commandArgs(text, command string) string {
@@ -35,7 +35,7 @@ func requireGroupReply(ctx context.Context, b *tgbot.Bot, update *models.Update)
 		return false, 0
 	}
 	if update.Message.Chat.Type == "private" {
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            util.EscapeMd("此命令只能在群组中使用。"),
 			ParseMode:       models.ParseModeMarkdown,
@@ -58,7 +58,7 @@ func replyTarget(update *models.Update) *models.User {
 func requireReplyTarget(ctx context.Context, b *tgbot.Bot, update *models.Update) (bool, *models.User) {
 	target := replyTarget(update)
 	if target == nil {
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            util.EscapeMd("请回复目标用户的消息。"),
 			ParseMode:       models.ParseModeMarkdown,
@@ -72,7 +72,7 @@ func requireReplyTarget(ctx context.Context, b *tgbot.Bot, update *models.Update
 // requireNonBot checks that the target user is not a bot.
 func requireNonBot(ctx context.Context, b *tgbot.Bot, update *models.Update, target *models.User) bool {
 	if target.IsBot {
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            util.EscapeMd("涅普不能对机器人执行此操作哦～"),
 			ParseMode:       models.ParseModeMarkdown,
@@ -83,6 +83,36 @@ func requireNonBot(ctx context.Context, b *tgbot.Bot, update *models.Update, tar
 	return true
 }
 
+func sendMessage(ctx context.Context, b *tgbot.Bot, params *tgbot.SendMessageParams) {
+	if _, err := b.SendMessage(ctx, params); err != nil {
+		slog.Warn("Failed to send Telegram message", "error", err)
+	}
+}
+
+func answerCallbackQuery(ctx context.Context, b *tgbot.Bot, params *tgbot.AnswerCallbackQueryParams) {
+	if _, err := b.AnswerCallbackQuery(ctx, params); err != nil {
+		slog.Warn("Failed to answer callback query", "error", err)
+	}
+}
+
+func editMessageText(ctx context.Context, b *tgbot.Bot, params *tgbot.EditMessageTextParams) {
+	if _, err := b.EditMessageText(ctx, params); err != nil {
+		slog.Warn("Failed to edit Telegram message text", "error", err)
+	}
+}
+
+func editMessageReplyMarkup(ctx context.Context, b *tgbot.Bot, params *tgbot.EditMessageReplyMarkupParams) {
+	if _, err := b.EditMessageReplyMarkup(ctx, params); err != nil {
+		slog.Warn("Failed to edit Telegram message reply markup", "error", err)
+	}
+}
+
+func deleteMessage(ctx context.Context, b *tgbot.Bot, params *tgbot.DeleteMessageParams) {
+	if _, err := b.DeleteMessage(ctx, params); err != nil {
+		slog.Warn("Failed to delete Telegram message", "error", err)
+	}
+}
+
 // requireAdmin checks admin permission and returns (allowed, groupId).
 // In groups: checks Telegram admin status. In private chat: checks admin_connections.
 func requireAdmin(ctx context.Context, b *tgbot.Bot, database *db.DB, update *models.Update) (bool, int64) {
@@ -91,7 +121,7 @@ func requireAdmin(ctx context.Context, b *tgbot.Bot, database *db.DB, update *mo
 	}
 	allowed, groupID := util.CheckAdminPermission(ctx, b, database, update.Message)
 	if !allowed {
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            util.EscapeMd("你没有权限执行此操作。"),
 			ParseMode:       models.ParseModeMarkdown,

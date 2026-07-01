@@ -4,10 +4,10 @@ import (
 	"context"
 	"log/slog"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 // Rule returns a handler for the /rule command.
@@ -32,13 +32,13 @@ func Rule(database *db.DB) tgbot.HandlerFunc {
 			}
 
 			if config != nil && config.Rule != "" {
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID:          update.Message.Chat.ID,
 					Text:            "当前群规:\n\n" + config.Rule + "\n\n使用 /rule <内容> 修改群规\n使用 /rule off 清除群规",
 					ReplyParameters: util.ReplyOptions(update.Message),
 				})
 			} else {
-				b.SendMessage(ctx, &tgbot.SendMessageParams{
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
 					ChatID:          update.Message.Chat.ID,
 					Text:            "当前未设置群规。\n\n使用 /rule <内容> 设置群规",
 					ReplyParameters: util.ReplyOptions(update.Message),
@@ -52,7 +52,7 @@ func Rule(database *db.DB) tgbot.HandlerFunc {
 				slog.Error("Failed to clear rule", "error", err)
 				return
 			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "✅ 群规已清除。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -61,7 +61,7 @@ func Rule(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		if len(rule) > 2048 {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
 				Text:            "群规过长（最大 2048 字符）。",
 				ReplyParameters: util.ReplyOptions(update.Message),
@@ -74,7 +74,7 @@ func Rule(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            "✅ 群规已设置。入群认证时将强制阅读群规。",
 			ReplyParameters: util.ReplyOptions(update.Message),

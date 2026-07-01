@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	tgbot "github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/handler"
 	"github.com/ChouChiu/neptune/internal/model"
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 // New creates a new Bot instance with all handlers registered.
