@@ -89,8 +89,11 @@ func main() {
 	// Setup HTTP server
 	mux := http.NewServeMux()
 
-	// Telegram webhook endpoint
-	mux.HandleFunc("/webhook", b.WebhookHandler())
+	// Telegram webhook endpoints. /tghook is the public path used behind nginx;
+	// /webhook remains for direct/internal compatibility.
+	telegramWebhookHandler := b.WebhookHandler()
+	mux.HandleFunc("/webhook", telegramWebhookHandler)
+	mux.HandleFunc("/tghook", telegramWebhookHandler)
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +163,7 @@ func main() {
 			scheme = r.Header.Get("X-Forwarded-Proto")
 		}
 		host := r.Host
-		webhookURL := fmt.Sprintf("%s://%s/webhook", scheme, host)
+		webhookURL := fmt.Sprintf("%s://%s/tghook", scheme, host)
 
 		_, err := b.SetWebhook(ctx, &tgbot.SetWebhookParams{
 			URL:            webhookURL,

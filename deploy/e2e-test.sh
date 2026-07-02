@@ -68,7 +68,7 @@ test_endpoint GET /health 200 "Health check"
 
 # --- Telegram Webhook ---
 log "Testing webhook endpoint..."
-test_endpoint POST /webhook 405 "Webhook rejects GET" ""
+test_endpoint GET /tghook 405 "Webhook rejects GET"
 # A proper webhook test would send a Telegram update, but that requires a real chat
 
 # --- Set Webhook ---

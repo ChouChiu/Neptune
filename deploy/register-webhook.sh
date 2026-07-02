@@ -33,7 +33,7 @@ if [ -z "$BOT_TOKEN" ]; then
   exit 1
 fi
 
-WEBHOOK_URL="https://$DOMAIN/webhook"
+WEBHOOK_URL="https://$DOMAIN/tghook"
 SET_WEBHOOK_URL="https://$DOMAIN/set-webhook?token=$WEBHOOK_SECRET"
 
 log "Registering webhook..."
