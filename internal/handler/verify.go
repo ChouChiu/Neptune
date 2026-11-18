@@ -272,7 +272,7 @@ func sendCaptcha(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, gro
 
 	_, err := b.SendPhoto(ctx, &tgbot.SendPhotoParams{
 		ChatID:  userID,
-		Photo:   &models.InputFileUpload{Filename: "captcha.bmp", Data: bytes.NewReader(captcha.BMP)},
+		Photo:   &models.InputFileUpload{Filename: "captcha.png", Data: bytes.NewReader(captcha.PNG)},
 		Caption: caption,
 	})
 	if err != nil {

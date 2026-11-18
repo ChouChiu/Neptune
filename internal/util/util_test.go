@@ -1,7 +1,8 @@
 package util
 
 import (
-	"encoding/binary"
+	"bytes"
+	"image/png"
 	"strings"
 	"testing"
 )
@@ -16,11 +17,15 @@ func TestGenerateCaptcha(t *testing.T) {
 			t.Fatalf("unexpected captcha char %q", res.Text[i])
 		}
 	}
-	if len(res.BMP) <= 54 || res.BMP[0] != 'B' || res.BMP[1] != 'M' {
-		t.Fatalf("invalid BMP header")
+	cfg, err := png.DecodeConfig(bytes.NewReader(res.PNG))
+	if err != nil {
+		t.Fatalf("invalid PNG: %v", err)
 	}
-	if got := int(binary.LittleEndian.Uint32(res.BMP[2:6])); got != len(res.BMP) {
-		t.Fatalf("BMP header size = %d, actual = %d", got, len(res.BMP))
+	if cfg.Width != 560 || cfg.Height != 460 {
+		t.Fatalf("captcha dimensions = %dx%d, want 560x460", cfg.Width, cfg.Height)
+	}
+	if empty := GenerateCaptcha(0); empty.Text != "" || len(empty.PNG) != 0 {
+		t.Fatalf("GenerateCaptcha(0) = %+v, want empty", empty)
 	}
 }
 
