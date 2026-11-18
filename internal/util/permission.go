@@ -44,12 +44,3 @@ func CheckAdminPermission(ctx context.Context, b *bot.Bot, db *db.DB, msg *model
 
 	return false, 0
 }
-
-// CheckGroupAdmin checks if a user is an admin connected to a specific group.
-func CheckGroupAdmin(db *db.DB, userID int64, groupID int64) bool {
-	result, err := db.IsAdminConnected(userID, groupID)
-	if err != nil {
-		return false
-	}
-	return result
-}

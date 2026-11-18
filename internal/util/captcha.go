@@ -2,10 +2,7 @@ package util
 
 import (
 	"encoding/binary"
-	"fmt"
-	"math/rand"
-	"os"
-	"path/filepath"
+	"math/rand/v2"
 	"strings"
 )
 
@@ -15,7 +12,7 @@ type CaptchaResult struct {
 	BMP  []byte
 }
 
-const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const captchaChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // FONT defines the 5x7 dot-matrix font for captcha characters.
 // Each character is represented by 5 bytes (columns), each byte's bits represent rows.
@@ -54,15 +51,15 @@ var FONT = map[byte][]byte{
 	'9': {0x06, 0x49, 0x49, 0x49, 0x3e},
 }
 
-func randomInt(min, max int) int {
-	return rand.Intn(max-min+1) + min
+func randomInt(minVal, maxVal int) int {
+	return rand.IntN(maxVal-minVal+1) + minVal
 }
 
 func randomChar() byte {
-	return chars[rand.Intn(len(chars))]
+	return captchaChars[rand.IntN(len(captchaChars))]
 }
 
-// createBmp creates a BMP image from pixel data.
+// createBmp creates a 24-bit BMP image from BGR pixel data.
 func createBmp(width, height int, pixels []byte) []byte {
 	rowSize := ((width*3 + 3) / 4) * 4
 	imageSize := rowSize * height
@@ -102,19 +99,18 @@ func createBmp(width, height int, pixels []byte) []byte {
 
 // GenerateCaptcha generates a captcha image with the specified number of characters.
 func GenerateCaptcha(size int) CaptchaResult {
-	if size <= 0 {
-		size = 5
-	}
-
 	var text strings.Builder
+	text.Grow(size)
 	for i := 0; i < size; i++ {
 		text.WriteByte(randomChar())
 	}
 
-	scale := 10
+	const (
+		scale   = 10
+		padding = 15
+	)
 	charW := 5 * scale
 	charH := 7 * scale
-	padding := 15
 	width := size*charW + (size-1)*padding + padding*2
 	height := charH + padding*2
 
@@ -134,6 +130,9 @@ func GenerateCaptcha(size int) CaptchaResult {
 		x2 := randomInt(0, width-1)
 		y2 := randomInt(0, height-1)
 		steps := max(abs(x2-x1), abs(y2-y1))
+		if steps == 0 {
+			steps = 1
+		}
 		for s := 0; s <= steps; s++ {
 			x := x1 + (x2-x1)*s/steps
 			y := y1 + (y2-y1)*s/steps
@@ -149,11 +148,7 @@ func GenerateCaptcha(size int) CaptchaResult {
 	// Draw text
 	captchaText := text.String()
 	for i := 0; i < size; i++ {
-		ch := captchaText[i]
-		glyph, ok := FONT[ch]
-		if !ok {
-			glyph = FONT['A']
-		}
+		glyph := FONT[captchaText[i]]
 		offsetX := padding + i*(charW+padding)
 		offsetY := padding
 
@@ -199,56 +194,9 @@ func GenerateCaptcha(size int) CaptchaResult {
 	}
 }
 
-// SaveCaptcha saves a captcha BMP file to the specified directory.
-func SaveCaptcha(dataDir string, groupID, userID int64, bmp []byte) (string, error) {
-	dir := filepath.Join(dataDir, "captcha", fmt.Sprintf("%d", groupID))
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("create captcha directory: %w", err)
-	}
-
-	filename := fmt.Sprintf("%d.bmp", userID)
-	path := filepath.Join(dir, filename)
-
-	if err := os.WriteFile(path, bmp, 0644); err != nil {
-		return "", fmt.Errorf("write captcha file: %w", err)
-	}
-
-	return path, nil
-}
-
-// LoadCaptcha loads a captcha BMP file from the specified directory.
-func LoadCaptcha(dataDir string, groupID, userID int64) ([]byte, error) {
-	path := filepath.Join(dataDir, "captcha", fmt.Sprintf("%d", groupID), fmt.Sprintf("%d.bmp", userID))
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read captcha file: %w", err)
-	}
-	return data, nil
-}
-
-// DeleteCaptcha deletes a captcha BMP file.
-func DeleteCaptcha(dataDir string, groupID, userID int64) error {
-	path := filepath.Join(dataDir, "captcha", fmt.Sprintf("%d", groupID), fmt.Sprintf("%d.bmp", userID))
-	return os.Remove(path)
-}
-
-// CleanOldCaptchas removes captcha files older than the specified age in hours.
-func CleanOldCaptchas(dataDir string, maxAgeHours int) error {
-	// Implementation would require checking file modification time
-	// For now, this is a placeholder
-	return nil
-}
-
 func abs(x int) int {
 	if x < 0 {
 		return -x
 	}
 	return x
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

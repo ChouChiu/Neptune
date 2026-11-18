@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,8 +24,8 @@ func New(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("create db directory: %w", err)
 	}
 
-	// Open with WAL mode for better concurrency
-	connStr := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON", dbPath)
+	// Open with WAL mode, busy timeout, and foreign keys enabled (modernc.org/sqlite syntax)
+	connStr := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 	db, err := sql.Open("sqlite", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -49,4 +50,22 @@ func New(dbPath string) (*DB, error) {
 // Close closes the database connection.
 func (d *DB) Close() error {
 	return d.DB.Close()
+}
+
+// currentTimestamp returns the current Unix timestamp in seconds.
+func currentTimestamp() int64 {
+	return time.Now().Unix()
+}
+
+func closeRows(rows *sql.Rows) {
+	if err := rows.Close(); err != nil {
+		slog.Warn("Failed to close database rows", "error", err)
+	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

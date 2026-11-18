@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ChouChiu/neptune/internal/db"
@@ -17,6 +19,7 @@ const (
 	welcomeSourceChatMember            = "chat_member"
 
 	welcomeMessageDeleteDelay = 5 * time.Minute
+	welcomeLockTTLSeconds     = 10
 )
 
 type welcomeMemberRequest struct {
@@ -35,12 +38,7 @@ func SetWelcome(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		text := ""
-		if update.Message != nil && update.Message.Text != "" {
-			text = commandArgs(update.Message.Text, "/setwelcome")
-		}
-		text = trimSpace(text)
-
+		text := util.CommandArgs(update.Message.Text, "/setwelcome")
 		if text == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -164,29 +162,30 @@ func restrictUser(ctx context.Context, b *tgbot.Bot, groupID, userID int64) erro
 }
 
 func unrestrictUser(ctx context.Context, b *tgbot.Bot, groupID, userID int64) error {
-	permissions, err := defaultChatPermissions(ctx, b, groupID)
-	if err != nil {
-		return err
-	}
-
-	_, err = b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+	_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
 		ChatID:                        groupID,
 		UserID:                        userID,
-		Permissions:                   permissions,
+		Permissions:                   defaultUnrestrictedPermissions(),
 		UseIndependentChatPermissions: true,
 	})
 	return err
 }
 
-func defaultChatPermissions(ctx context.Context, b *tgbot.Bot, groupID int64) (*models.ChatPermissions, error) {
-	chat, err := b.GetChat(ctx, &tgbot.GetChatParams{ChatID: groupID})
-	if err != nil {
-		return nil, err
+func defaultUnrestrictedPermissions() *models.ChatPermissions {
+	return &models.ChatPermissions{
+		CanSendMessages:       true,
+		CanSendAudios:         true,
+		CanSendDocuments:      true,
+		CanSendPhotos:         true,
+		CanSendVideos:         true,
+		CanSendVideoNotes:     true,
+		CanSendVoiceNotes:     true,
+		CanSendPolls:          true,
+		CanSendOtherMessages:  true,
+		CanAddWebPagePreviews: true,
+		CanInviteUsers:        true,
+		CanReactToMessages:    true,
 	}
-	if chat.Permissions != nil {
-		return chat.Permissions, nil
-	}
-	return &models.ChatPermissions{CanSendMessages: true}, nil
 }
 
 func restrictedChatPermissions() *models.ChatPermissions {
@@ -210,60 +209,19 @@ func restrictedChatPermissions() *models.ChatPermissions {
 	}
 }
 
-// trimSpace trims whitespace from a string.
-func trimSpace(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
-		end--
-	}
-	return s[start:end]
-}
-
-// escapeGroupTitle escapes a group title for MarkdownV2.
-func escapeGroupTitle(title string) string {
-	if title == "" {
-		return ""
-	}
-	return util.EscapeMd(title)
-}
-
-func sendVerificationWelcome(ctx context.Context, b *tgbot.Bot, groupID int64, messageThreadID int, markdownText, plainText, buttonText, verifyURL string) (*models.Message, error) {
-	replyMarkup := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: buttonText, URL: verifyURL},
-			},
-		},
-	}
-
-	params := &tgbot.SendMessageParams{
-		ChatID:          groupID,
-		MessageThreadID: messageThreadID,
-		Text:            markdownText,
-		ParseMode:       models.ParseModeMarkdown,
-		ReplyMarkup:     replyMarkup,
-	}
-
-	groupMsg, err := b.SendMessage(ctx, params)
-	if err == nil {
-		return groupMsg, nil
-	}
-
-	slog.Warn("Failed to send MarkdownV2 welcome verification message, retrying as plain text",
-		"group_id", groupID,
-		"message_thread_id", messageThreadID,
-		"error", err,
-	)
-
+func sendVerificationWelcome(ctx context.Context, b *tgbot.Bot, groupID int64, messageThreadID int, text, buttonText, verifyURL string) (*models.Message, error) {
 	return b.SendMessage(ctx, &tgbot.SendMessageParams{
 		ChatID:          groupID,
 		MessageThreadID: messageThreadID,
-		Text:            plainText,
-		ReplyMarkup:     replyMarkup,
+		Text:            text,
+		ParseMode:       models.ParseModeMarkdown,
+		ReplyMarkup: &models.InlineKeyboardMarkup{
+			InlineKeyboard: [][]models.InlineKeyboardButton{
+				{
+					{Text: buttonText, URL: verifyURL},
+				},
+			},
+		},
 	})
 }
 
@@ -319,12 +277,71 @@ func WelcomeNewMembersFromChatMember(database *db.DB, configuredBotUsername stri
 	}
 }
 
+func sendGroupVerifyPrompt(
+	ctx context.Context,
+	b *tgbot.Bot,
+	config *model.GroupConfig,
+	configuredBotUsername string,
+	groupID int64,
+	groupTitle string,
+	messageThreadID int,
+	user *models.User,
+) (*int64, bool) {
+	userID := user.ID
+	nickname := util.GetNickname(user)
+
+	welcomeText := util.ReplacePlaceholders(
+		util.EscapeMd(config.WelcomeMessage),
+		util.EscapeMd(nickname),
+		userID,
+		util.EscapeMd(groupTitle),
+		true,
+	)
+
+	botUsername := strings.TrimPrefix(configuredBotUsername, "@")
+	if botUsername == "" {
+		slog.Error("Failed to build verify URL: bot username is empty", "group_id", groupID, "user_id", userID)
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
+			ChatID: groupID,
+			Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
+		})
+		return nil, false
+	}
+
+	verifyURL := fmt.Sprintf("https://t.me/%s?start=verify%d_%d", botUsername, groupID, userID)
+	groupMsg, err := sendVerificationWelcome(
+		ctx, b, groupID, messageThreadID,
+		welcomeText, config.VerifyButtonText, verifyURL,
+	)
+	if err != nil {
+		slog.Error("Failed to send welcome verification message", "group_id", groupID, "user_id", userID, "error", err)
+		return nil, true
+	}
+	if groupMsg == nil {
+		return nil, true
+	}
+
+	mid := int64(groupMsg.ID)
+	return &mid, true
+}
+
 func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, config *model.GroupConfig, configuredBotUsername string, req welcomeMemberRequest) {
 	if req.user == nil || req.user.IsBot {
 		return
 	}
 
 	userID := req.user.ID
+
+	// Deduplicate concurrent new_chat_members and chat_member join events.
+	lockName := fmt.Sprintf("welcome:%d:%d", req.groupID, userID)
+	acquired, lockErr := database.AcquireLock(lockName, welcomeLockTTLSeconds)
+	if lockErr != nil {
+		slog.Error("Failed to acquire welcome lock", "group_id", req.groupID, "user_id", userID, "error", lockErr)
+	} else if !acquired {
+		slog.Debug("Skipping duplicate member join event", "group_id", req.groupID, "user_id", userID, "source", req.source)
+		return
+	}
+
 	nickname := util.GetNickname(req.user)
 
 	slog.Info("Processing new member verification",
@@ -335,53 +352,22 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 		"update_source", req.source,
 	)
 
-	welcomeText := util.ReplacePlaceholders(
-		config.WelcomeMessage,
-		util.EscapeMd(nickname),
-		userID,
-		escapeGroupTitle(req.groupTitle),
-		true,
+	welcomeMsgID, ok := sendGroupVerifyPrompt(
+		ctx, b, config, configuredBotUsername,
+		req.groupID, req.groupTitle, req.messageThreadID, req.user,
 	)
-	plainWelcomeText := util.ReplacePlaceholders(
-		config.WelcomeMessage,
-		nickname,
-		userID,
-		req.groupTitle,
-		false,
-	)
-
-	botUsername := configuredBotUsername
-	if botUsername == "" {
-		botUsername = getBotUsername(ctx, b)
-	}
-	if botUsername == "" {
-		slog.Error("Failed to build verify URL: bot username is empty", "group_id", req.groupID, "user_id", userID)
-		sendMessage(ctx, b, &tgbot.SendMessageParams{
-			ChatID: req.groupID,
-			Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
-		})
+	if !ok {
 		return
 	}
 
-	verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(req.groupID) + "_" + intToStr(userID)
-	groupMsg, err := sendVerificationWelcome(
-		ctx, b, req.groupID, req.messageThreadID,
-		welcomeText, plainWelcomeText, config.VerifyButtonText, verifyURL,
-	)
-
-	var welcomeMsgID *int64
-	if err == nil && groupMsg != nil {
-		mid := int64(groupMsg.ID)
-		welcomeMsgID = &mid
+	if welcomeMsgID != nil {
 		slog.Info("Welcome verification message sent",
 			"group_id", req.groupID,
 			"user_id", userID,
-			"message_id", groupMsg.ID,
+			"message_id", *welcomeMsgID,
 			"message_thread_id", req.messageThreadID,
 			"update_source", req.source,
 		)
-	} else if err != nil {
-		slog.Error("Failed to send welcome verification message", "group_id", req.groupID, "user_id", userID, "error", err)
 	}
 
 	expiresAt := util.CurrentTimestamp() + int64(config.VerifyTimeout) + 300
@@ -394,10 +380,96 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 	if welcomeMsgID != nil {
 		scheduleWelcomeMessageDeletion(ctx, b, database, userID, req.groupID, *welcomeMsgID)
 	}
+}
 
-	if err := restrictUser(ctx, b, req.groupID, userID); err != nil {
-		slog.Error("Failed to restrict user", "user_id", userID, "error", err)
+// HandleUnverifiedGroupMessage intercepts group messages from unverified members,
+// deletes the message, restricts the member, and sends a second verification prompt once.
+func HandleUnverifiedGroupMessage(ctx context.Context, b *tgbot.Bot, database *db.DB, configuredBotUsername string, update *models.Update) bool {
+	if update.Message == nil || update.Message.From == nil || update.Message.From.IsBot {
+		return false
 	}
+	if update.Message.Chat.Type != "group" && update.Message.Chat.Type != "supergroup" {
+		return false
+	}
+	if len(update.Message.NewChatMembers) > 0 || update.Message.LeftChatMember != nil {
+		return false
+	}
+
+	groupID := update.Message.Chat.ID
+	userID := update.Message.From.ID
+
+	pv, err := database.GetPendingVerification(userID, groupID)
+	if err != nil {
+		slog.Error("Failed to check pending verification on group message", "group_id", groupID, "user_id", userID, "error", err)
+		return false
+	}
+	if pv == nil {
+		return false
+	}
+
+	deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
+		ChatID:    groupID,
+		MessageID: update.Message.ID,
+	})
+
+	if err := restrictUser(ctx, b, groupID, userID); err != nil {
+		slog.Error("Failed to restrict unverified user on first message", "group_id", groupID, "user_id", userID, "error", err)
+	}
+
+	config, err := database.GetGroupConfig(groupID)
+	if err != nil {
+		slog.Error("Failed to get group config on first unverified message", "group_id", groupID, "user_id", userID, "error", err)
+		return true
+	}
+
+	timeout := 300
+	if config != nil && config.VerifyTimeout > 0 {
+		timeout = config.VerifyTimeout
+	}
+	expiresAt := util.CurrentTimestamp() + int64(timeout) + 300
+
+	firstTime, err := database.MarkFirstMessagePrompted(userID, groupID, expiresAt)
+	if err != nil {
+		slog.Error("Failed to mark first message prompted", "group_id", groupID, "user_id", userID, "error", err)
+		return true
+	}
+	if !firstTime {
+		return true
+	}
+
+	if pv.WelcomeMessageID != nil {
+		deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
+			ChatID:    groupID,
+			MessageID: int(*pv.WelcomeMessageID),
+		})
+	}
+
+	if config == nil {
+		return true
+	}
+
+	welcomeMsgID, ok := sendGroupVerifyPrompt(
+		ctx, b, config, configuredBotUsername,
+		groupID, update.Message.Chat.Title, update.Message.MessageThreadID, update.Message.From,
+	)
+	if !ok {
+		return true
+	}
+
+	if err := database.UpdatePendingWelcomeMessageID(userID, groupID, welcomeMsgID); err != nil {
+		slog.Error("Failed to update welcome message ID on first message", "group_id", groupID, "user_id", userID, "error", err)
+	}
+
+	if welcomeMsgID != nil {
+		slog.Info("First-message verification prompt sent",
+			"group_id", groupID,
+			"user_id", userID,
+			"message_id", *welcomeMsgID,
+			"message_thread_id", update.Message.MessageThreadID,
+		)
+		scheduleWelcomeMessageDeletion(ctx, b, database, userID, groupID, *welcomeMsgID)
+	}
+	return true
 }
 
 // scheduleWelcomeMessageDeletion deletes the welcome message after a delay
@@ -411,14 +483,13 @@ func scheduleWelcomeMessageDeletion(ctx context.Context, b *tgbot.Bot, database 
 			return
 		}
 
-		// Check if verification still exists (user hasn't completed it)
+		// Check if verification still exists with the same welcome message ID.
 		v, err := database.GetPendingVerification(userID, groupID)
 		if err != nil {
 			slog.Error("Failed to check pending verification for delayed welcome deletion", "error", err)
 			return
 		}
-		if v == nil {
-			// Verification already completed or removed
+		if v == nil || v.WelcomeMessageID == nil || *v.WelcomeMessageID != welcomeMsgID {
 			return
 		}
 
@@ -448,27 +519,4 @@ func IsChatMemberJoin(oldStatus, newStatus models.ChatMemberType) bool {
 	wasNotMember := oldStatus != models.ChatMemberTypeMember && oldStatus != models.ChatMemberTypeRestricted
 	isNowMember := newStatus == models.ChatMemberTypeMember || newStatus == models.ChatMemberTypeRestricted
 	return wasNotMember && isNowMember
-}
-
-// intToStr converts an int64 to string.
-func intToStr(n int64) string {
-	if n < 0 {
-		return "-" + uintToStr(uint64(-n))
-	}
-	return uintToStr(uint64(n))
-}
-
-// uintToStr converts a uint64 to string.
-func uintToStr(n uint64) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := make([]byte, 20)
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

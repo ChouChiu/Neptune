@@ -33,7 +33,6 @@ func Report(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		content := util.CommandArgs(update.Message.Text, "/report")
-		content = trimSpace(content)
 
 		if content == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{

@@ -55,7 +55,7 @@ templ Layout(botUsername string) {
 			@SidebarBackdrop()
 			@Sidebar()
 			@MainWrapper()
-			@PageScripts(botUsername)
+			@PageScripts()
 		</body>
 	</html>
 }
@@ -127,7 +127,7 @@ templ MainWrapper() {
 	</div>
 }
 
-templ PageScripts(botUsername string) {
+templ PageScripts() {
 	<script>
 	'use strict';
 

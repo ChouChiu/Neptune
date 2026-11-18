@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/ChouChiu/neptune/internal/db"
@@ -27,8 +28,7 @@ func buildVoteText(targetName, initiatorName string, yesCount, noCount int, expi
 	seconds := remaining % 60
 	timeStr := fmt.Sprintf("%d秒", seconds)
 	if minutes > 0 {
-		timeStr = fmt.Sprintf("分%d秒", seconds)
-		timeStr = fmt.Sprintf("%d", minutes) + timeStr
+		timeStr = fmt.Sprintf("%d分%d秒", minutes, seconds)
 	}
 	return fmt.Sprintf(
 		"🗳️ 投票踢人\n\n目标: %s\n发起人: %s\n\n赞成: %s %d/%d\n反对: %s %d\n\n剩余时间: %s",
@@ -44,7 +44,11 @@ func EnableVotekick(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		config, _ := database.GetGroupConfig(groupID)
+		config, err := database.GetGroupConfig(groupID)
+		if err != nil {
+			slog.Error("Failed to get group config for enablevotekick", "group_id", groupID, "error", err)
+			return
+		}
 		if config != nil && config.VotekickEnabled != 0 {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -75,7 +79,11 @@ func DisableVotekick(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		config, _ := database.GetGroupConfig(groupID)
+		config, err := database.GetGroupConfig(groupID)
+		if err != nil {
+			slog.Error("Failed to get group config for disablevotekick", "group_id", groupID, "error", err)
+			return
+		}
 		if config == nil || config.VotekickEnabled == 0 {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -106,7 +114,11 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		config, _ := database.GetGroupConfig(groupID)
+		config, err := database.GetGroupConfig(groupID)
+		if err != nil {
+			slog.Error("Failed to get group config for kick", "group_id", groupID, "error", err)
+			return
+		}
 		if config == nil || config.VotekickEnabled == 0 {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -206,6 +218,7 @@ func Kick(database *db.DB) tgbot.HandlerFunc {
 		})
 		if err != nil {
 			slog.Error("Failed to send vote message", "error", err)
+			_ = database.DeleteActiveVote(voteID)
 			return
 		}
 
@@ -228,7 +241,10 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		voteID := parts[1]
-		choice := strToInt(parts[2])
+		if parts[2] != "0" && parts[2] != "1" {
+			return
+		}
+		choice, _ := strconv.Atoi(parts[2])
 		voterID := update.CallbackQuery.From.ID
 
 		vote, err := database.GetActiveVote(voteID)
@@ -277,11 +293,13 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		yesCount, noCount, _ := database.GetVoteCounts(voteID)
+		yesCount, noCount, err := database.GetVoteCounts(voteID)
+		if err != nil {
+			slog.Error("Failed to get vote counts", "vote_id", voteID, "error", err)
+			return
+		}
 
 		targetName := fmt.Sprintf("用户 %d", vote.TargetID)
-		initiatorName := fmt.Sprintf("用户 %d", vote.InitiatorID)
-
 		targetMember, err := b.GetChatMember(ctx, &tgbot.GetChatMemberParams{
 			ChatID: vote.GroupID,
 			UserID: vote.TargetID,
@@ -290,34 +308,6 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 			if u := chatMemberUser(targetMember); u != nil {
 				targetName = util.GetNickname(u)
 			}
-		}
-
-		initiatorMember, err := b.GetChatMember(ctx, &tgbot.GetChatMemberParams{
-			ChatID: vote.GroupID,
-			UserID: vote.InitiatorID,
-		})
-		if err == nil {
-			if u := chatMemberUser(initiatorMember); u != nil {
-				initiatorName = util.GetNickname(u)
-			}
-		}
-
-		text := buildVoteText(targetName, initiatorName, yesCount, noCount, vote.ExpiresAt)
-
-		if vote.MessageID != nil {
-			editMessageText(ctx, b, &tgbot.EditMessageTextParams{
-				ChatID:    vote.GroupID,
-				MessageID: int(*vote.MessageID),
-				Text:      text,
-				ReplyMarkup: &models.InlineKeyboardMarkup{
-					InlineKeyboard: [][]models.InlineKeyboardButton{
-						{
-							{Text: fmt.Sprintf("赞成 (%d)", yesCount), CallbackData: fmt.Sprintf("vk:%s:1", voteID)},
-							{Text: fmt.Sprintf("反对 (%d)", noCount), CallbackData: fmt.Sprintf("vk:%s:0", voteID)},
-						},
-					},
-				},
-			})
 		}
 
 		if yesCount >= voteThreshold {
@@ -349,6 +339,35 @@ func VotekickCallback(database *db.DB) tgbot.HandlerFunc {
 				Text:            "投票通过！",
 			})
 			return
+		}
+
+		initiatorName := fmt.Sprintf("用户 %d", vote.InitiatorID)
+		initiatorMember, err := b.GetChatMember(ctx, &tgbot.GetChatMemberParams{
+			ChatID: vote.GroupID,
+			UserID: vote.InitiatorID,
+		})
+		if err == nil {
+			if u := chatMemberUser(initiatorMember); u != nil {
+				initiatorName = util.GetNickname(u)
+			}
+		}
+
+		text := buildVoteText(targetName, initiatorName, yesCount, noCount, vote.ExpiresAt)
+
+		if vote.MessageID != nil {
+			editMessageText(ctx, b, &tgbot.EditMessageTextParams{
+				ChatID:    vote.GroupID,
+				MessageID: int(*vote.MessageID),
+				Text:      text,
+				ReplyMarkup: &models.InlineKeyboardMarkup{
+					InlineKeyboard: [][]models.InlineKeyboardButton{
+						{
+							{Text: fmt.Sprintf("赞成 (%d)", yesCount), CallbackData: fmt.Sprintf("vk:%s:1", voteID)},
+							{Text: fmt.Sprintf("反对 (%d)", noCount), CallbackData: fmt.Sprintf("vk:%s:0", voteID)},
+						},
+					},
+				},
+			})
 		}
 
 		choiceText := "反对"

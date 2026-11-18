@@ -6,6 +6,9 @@ import "github.com/go-telegram/bot/models"
 // If the user has a last name, it returns "FirstName LastName".
 // Otherwise, it returns just the first name.
 func GetNickname(user *models.User) string {
+	if user == nil {
+		return ""
+	}
 	if user.LastName != "" {
 		return user.FirstName + " " + user.LastName
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,8 +87,8 @@ func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 			return
 		}
 
-		userID, err := parseID(idStr)
-		if err != nil {
+		userID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || userID <= 0 {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "Invalid user ID"})
 			return
 		}
@@ -126,13 +127,13 @@ func handleLogin(database *db.DB, botToken string) http.HandlerFunc {
 // handleMe returns the current authenticated user info.
 func handleMe(botToken string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("nep_session")
-		if err != nil || cookie.Value == "" {
+		token := extractSessionToken(r)
+		if token == "" {
 			writeJSON(w, http.StatusOK, map[string]any{"user": nil})
 			return
 		}
 
-		userID := VerifySession(botToken, cookie.Value)
+		userID := VerifySession(botToken, token)
 		if userID == 0 {
 			http.SetCookie(w, &http.Cookie{
 				Name:     "nep_session",
@@ -163,24 +164,6 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 		slog.Error("Failed to write JSON response", "error", err)
 	}
 }
-
-func parseID(s string) (int64, error) {
-	var id int64
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, ErrInvalidID
-		}
-		id = id*10 + int64(c-'0')
-	}
-	return id, nil
-}
-
-// ErrInvalidID is returned when a user ID string is not a valid number.
-var ErrInvalidID = errInvalidID{}
-
-type errInvalidID struct{}
-
-func (errInvalidID) Error() string { return "invalid ID" }
 
 // handleLogsStream returns an SSE handler that streams log entries.
 func handleLogsStream(collector *LogCollector) http.HandlerFunc {

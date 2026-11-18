@@ -1,4 +1,7 @@
-.PHONY: build run dev test lint lint-fix clean generate docker-build docker-up docker-down docker-logs webhook e2e help
+.PHONY: build run dev test test-coverage lint lint-fix vet tidy clean generate fmt docker-build docker-up docker-down docker-logs webhook e2e help
+
+GOPATH_BIN := $(shell go env GOPATH)/bin
+export PATH := $(GOPATH_BIN):$(PATH)
 
 # ========== 构建参数 ==========
 BINARY_NAME=neptune
@@ -11,7 +14,7 @@ WEBHOOK_SECRET?=
 
 # ========== 开发命令 ==========
 
-build:
+build: generate
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) -v $(CMD_DIR)
 
 run: build
@@ -20,23 +23,23 @@ run: build
 dev:
 	air
 
-test:
+test: generate
 	go test -v ./...
 
-test-coverage:
+test-coverage: generate
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-lint:
+lint: generate
 	golangci-lint run ./...
 
-lint-fix:
+lint-fix: generate
 	golangci-lint run --fix ./...
 
-vet:
+vet: generate
 	go vet ./...
 
-tidy:
+tidy: generate
 	go mod tidy
 
 clean:

@@ -1,8 +1,8 @@
 # Stage 1: Build
 FROM golang:1.26-alpine AS builder
 
-RUN apk add --no-cache git gcc musl-dev && \
-    go install github.com/a-h/templ/cmd/templ@latest
+RUN apk add --no-cache git && \
+    go install github.com/a-h/templ/cmd/templ@v0.3.1118
 
 WORKDIR /src
 COPY go.mod go.sum ./

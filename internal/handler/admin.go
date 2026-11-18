@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,9 @@ func ID(database *db.DB) tgbot.HandlerFunc {
 				UserID: update.Message.From.ID,
 			})
 			if err == nil && (member.Type == models.ChatMemberTypeAdministrator || member.Type == models.ChatMemberTypeOwner) {
-				_ = database.ConnectAdmin(update.Message.From.ID, chat.ID)
+				if err := database.ConnectAdmin(update.Message.From.ID, chat.ID); err != nil {
+					slog.Warn("Failed to auto-connect admin", "user_id", update.Message.From.ID, "group_id", chat.ID, "error", err)
+				}
 			}
 		}
 
@@ -64,13 +67,7 @@ func Connect(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		args := strings.TrimSpace(update.Message.Text)
-		// Remove "/connect" prefix
-		if len(args) > 8 {
-			args = strings.TrimSpace(args[8:])
-		} else {
-			args = ""
-		}
+		args := util.CommandArgs(update.Message.Text, "/connect")
 
 		if args == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
@@ -168,7 +165,10 @@ func Switch(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		currentGroupID, _ := database.GetAdminGroupID(update.Message.From.ID)
+		currentGroupID, err := database.GetAdminGroupID(update.Message.From.ID)
+		if err != nil {
+			slog.Warn("Failed to get current admin group", "user_id", update.Message.From.ID, "error", err)
+		}
 
 		buttons := buildSwitchButtons(groupIDs, currentGroupID)
 		sendMessage(ctx, b, &tgbot.SendMessageParams{
@@ -195,7 +195,21 @@ func SwitchCallback(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		userID := update.CallbackQuery.From.ID
+		connected, err := database.IsAdminConnected(userID, groupID)
+		if err != nil {
+			slog.Error("Failed to check admin group connection", "user_id", userID, "group_id", groupID, "error", err)
+			return
+		}
+		if !connected {
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: update.CallbackQuery.ID,
+				Text:            "你未绑定该群组。",
+			})
+			return
+		}
+
 		if err := database.SetCurrentGroup(userID, groupID); err != nil {
+			slog.Error("Failed to switch current group", "user_id", userID, "group_id", groupID, "error", err)
 			return
 		}
 

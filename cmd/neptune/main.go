@@ -32,31 +32,14 @@ func main() {
 	slog.SetDefault(slog.New(multiHandler))
 
 	// Load configuration from environment
-	cfg := &model.Config{
-		BotToken:            os.Getenv("BOT_TOKEN"),
-		BotUsername:         os.Getenv("BOT_USERNAME"),
-		ReuseCaptcha:        os.Getenv("REUSE_CAPTCHA") == "true",
-		GitHubWebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
-	}
-
-	if cfg.BotToken == "" {
-		slog.Error("BOT_TOKEN environment variable is required")
+	cfg, err := model.LoadConfigFromEnv()
+	if err != nil {
+		slog.Error("Configuration error", "error", err)
 		os.Exit(1)
 	}
 
-	// Parse RELEASE_CHANNEL_ID
-	if id := os.Getenv("RELEASE_CHANNEL_ID"); id != "" {
-		if _, err := fmt.Sscanf(id, "%d", &cfg.ReleaseChannelID); err != nil {
-			slog.Warn("Invalid RELEASE_CHANNEL_ID", "value", id, "error", err)
-		}
-	}
-
 	// Initialize database
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "data/neptune.db"
-	}
-	database, err := db.New(dbPath)
+	database, err := db.New(cfg.DBPath)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
@@ -89,11 +72,8 @@ func main() {
 	// Setup HTTP server
 	mux := http.NewServeMux()
 
-	// Telegram webhook endpoints. /tghook is the public path used behind nginx;
-	// /webhook remains for direct/internal compatibility.
-	telegramWebhookHandler := b.WebhookHandler()
-	mux.HandleFunc("/webhook", telegramWebhookHandler)
-	mux.HandleFunc("/tghook", telegramWebhookHandler)
+	// Telegram webhook endpoint
+	mux.HandleFunc("/tghook", b.WebhookHandler())
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -175,11 +155,6 @@ func main() {
 			return
 		}
 
-		// Also set commands
-		if err := bot.SetCommands(ctx, b); err != nil {
-			slog.Warn("Failed to set commands", "error", err)
-		}
-
 		if _, err := fmt.Fprintf(w, "Webhook set to %s", webhookURL); err != nil {
 			slog.Warn("Failed to write set-webhook response", "error", err)
 		}
@@ -189,13 +164,8 @@ func main() {
 	go b.StartWebhook(ctx)
 
 	// Configure HTTP server
-	addr := os.Getenv("LISTEN_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-
 	srv := &http.Server{
-		Addr:         addr,
+		Addr:         cfg.ListenAddr,
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -217,7 +187,7 @@ func main() {
 		}
 	}()
 
-	slog.Info("Neptune starting", "addr", addr)
+	slog.Info("Neptune starting", "addr", cfg.ListenAddr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		slog.Error("Server error", "error", err)
 		os.Exit(1)

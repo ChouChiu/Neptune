@@ -73,32 +73,42 @@ make vet              # go vet
 **Go 项目布局**：`internal/` 目录下的包无法被外部模块导入（Go 编译器强制），`cmd/` 为程序入口。
 
 ```
-cmd/neptune/main.go           # 入口：HTTP server + bot 初始化 + graceful shutdown
+cmd/neptune/main.go           # 入口：配置加载 + DB 初始化 + HTTP server + bot 初始化 + graceful shutdown
 internal/
 ├── bot/bot.go                # Bot 创建、handler 注册
 ├── bot/middleware.go         # 日志、recovery、群组初始化中间件
 ├── handler/                  # 所有命令 + 回调 handler
-│   ├── orchestrator.go       # 消息分发：DM→验证码, 群组→AI→关键词
+│   ├── orchestrator.go       # 消息分发：私聊→验证码, 群组→关键词
 │   └── ...                   # 各功能 handler
-├── adminpanel/               # Web 管理面板（Chi 路由 + Templ 模板 + HTMX 前端交互）
-│   ├── server.go             # Chi 路由注册
+├── adminpanel/               # Web 管理面板（Chi 路由 + Templ 模板 + HTMX + SSE）
+│   ├── server.go             # Chi 路由注册、登录与 SSE 日志流
 │   ├── auth.go               # Telegram Login Widget + HMAC-SHA256 签名验证 + session cookie
+│   ├── middleware.go         # Session 认证中间件
+│   ├── logcollector.go       # slog 实时日志收集与广播
+│   ├── sessionctx/           # 请求上下文中的管理员 ID 封装
 │   ├── handler/              # API handler（reports, warnings）
 │   └── components/           # Templ 模板
 ├── github/release.go         # GitHub webhook + GitHub Flavored Markdown→Telegram MarkdownV2 转换
-├── db/                       # SQLite 数据库层
-├── model/                    # 数据结构体
-└── util/                     # 共享工具函数
+├── db/                       # SQLite 数据库层（按业务域拆分）
+│   ├── db.go                 # 数据库连接、WAL/外键 Pragma 配置、公共辅助方法
+│   ├── schema.go             # 基础 Schema 与幂等迁移执行
+│   ├── group.go              # 群组配置与管理员绑定
+│   ├── keyword.go            # 关键词/正则规则 CRUD
+│   ├── verification.go       # 入群验证与分布式锁
+│   ├── votekick.go           # 投票踢人与投票记录
+│   └── moderation.go         # 警告与举报记录
+├── model/                    # 数据结构体与环境变量配置加载
+└── util/                     # 共享工具函数（验证码生成、繁简转换、Markdown 转义等）
 migrations/                   # SQL 迁移文件
 deploy/                       # 部署脚本 + 配置
 ```
 
 ### 数据库
 
-- **SQLite**（驱动：`modernc.org/sqlite`，纯 Go 实现，无需 CGO 编译），使用 WAL（Write-Ahead Logging）模式提升并发性能
+- **SQLite**（驱动：`modernc.org/sqlite`，纯 Go 实现，无需 CGO 编译），启用 WAL（Write-Ahead Logging）模式、5000ms busy timeout 与外键约束
 - Schema：`internal/db/schema.go` — 启动时自动执行 `ApplySchema()`
 - 迁移：`migrations/*.sql` — 通过 `ApplyMigrations()` 按 `schema_migrations` 表追踪
-- 查询：`internal/db/queries.go` — 所有 DB 访问通过 `DB` 结构体方法
+- 查询：`internal/db/` — 按业务模块拆分为 `group.go`、`keyword.go`、`verification.go`、`votekick.go`、`moderation.go`，统一通过 `*db.DB` 方法访问
 
 ### 关键依赖
 
@@ -119,28 +129,23 @@ deploy/                       # 部署脚本 + 配置
 3. 如果需要新数据库表：
    - 在 `internal/db/schema.go` 中添加表定义
    - 在 `migrations/` 下创建迁移文件（命名格式：`NNN_description.sql`）
-   - 在 `internal/db/queries.go` 中添加查询函数
+   - 在 `internal/db/` 对应的领域文件（如 `group.go`、`moderation.go` 等）中添加查询方法
 4. 运行 `make generate`（如果有 templ 文件变更）
-5. 运行 `make lint && make vet`，确保全部通过
+5. 运行 `make lint && make vet && make test`，确保全部通过
 6. 更新 README 命令列表
 
 ### 添加管理员命令
 
-使用 `CheckAdminPermission()` 检查权限：
+使用 `requireAdmin()`（底层调用 `util.CheckAdminPermission()`）检查权限：
 
 ```go
-func MyAdminCommand(database *db.DB) handler.HandlerFunc {
+func MyAdminCommand(database *db.DB) tgbot.HandlerFunc {
     return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-        allowed, groupId, err := util.CheckAdminPermission(database, update)
-        if err != nil {
-            // 处理数据库错误
-            return
-        }
+        allowed, groupID := requireAdmin(ctx, b, database, update)
         if !allowed {
-            // 回复无权限
             return
         }
-        // 使用 groupId 执行操作
+        // 使用 groupID 执行操作
     }
 }
 ```
@@ -149,9 +154,10 @@ func MyAdminCommand(database *db.DB) handler.HandlerFunc {
 
 `internal/adminpanel/` 使用 [Chi](https://github.com/go-chi/chi)（HTTP 路由）+ [Templ](https://templ.dev)（Go 模板引擎）+ [HTMX](https://htmx.org)（前端交互）：
 
-- `server.go` — 路由注册
+- `server.go` — 路由注册、登录接口与实时日志 SSE 流
 - `auth.go` — Telegram Login Widget 验证 + HMAC-SHA256 签名校验 + session cookie
-- `handler/` — API 端点返回 HTML fragment（Templ 渲染）
+- `middleware.go` — Session 认证中间件
+- `handler/` — API 端点返回 HTML fragment（Templ 渲染）或 JSON 响应
 - `components/` — Templ 模板
 
 添加新管理面板模块：在 `internal/adminpanel/handler/` 下创建 handler，在 `server.go` 中注册路由。
@@ -164,13 +170,13 @@ func MyAdminCommand(database *db.DB) handler.HandlerFunc {
 make generate          # templ generate（生成 *_templ.go 文件）
 ```
 
-生成的 `*_templ.go` 文件已 gitignored，每次修改 `.templ` 文件后需重新生成。
+生成的 `*_templ.go` 文件已 gitignored，每次修改 `.templ` 文件后需重新生成（`make build`/`test`/`lint`/`vet` 会自动执行 `generate`）。
 
 ### 数据库迁移
 
 1. 在 `migrations/` 下创建迁移文件，命名格式：`NNN_description.sql`
 2. 编写 SQL（参考 `internal/db/schema.go` 中的表结构）
-3. 在 `internal/db/queries.go` 中添加对应的查询函数
+3. 在 `internal/db/` 对应的领域文件中添加查询方法
 4. 迁移在启动时自动执行（通过 `ApplyMigrations()`）
 
 > 注意：迁移通过 `schema_migrations` 表追踪，每个文件只执行一次。

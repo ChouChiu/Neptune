@@ -1,13 +1,10 @@
 package db
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -55,6 +52,7 @@ CREATE TABLE IF NOT EXISTS pending_verifications (
   welcome_message_id INTEGER,
   attempts INTEGER DEFAULT 0,
   rule_ack_done INTEGER DEFAULT 0,
+  prompted_on_message INTEGER DEFAULT 0,
   PRIMARY KEY (user_id, group_id)
 );
 
@@ -100,6 +98,8 @@ CREATE TABLE IF NOT EXISTS reports (
   FOREIGN KEY (group_id) REFERENCES groups(group_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_pending_verifications_expires ON pending_verifications(expires_at);
+CREATE INDEX IF NOT EXISTS idx_active_votes_expires ON active_votes(expires_at);
 CREATE INDEX IF NOT EXISTS idx_warnings_group_user ON warnings(group_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 
@@ -107,19 +107,10 @@ CREATE TABLE IF NOT EXISTS locks (
   name TEXT PRIMARY KEY,
   expires_at INTEGER NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS kv (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_kv_expires ON kv(expires_at);
 `
 
 // migrationsDir is the path to the migrations directory.
 const migrationsDir = "migrations"
-
-var addColumnRe = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([A-Za-z_][A-Za-z0-9_]*)\s+ADD\s+COLUMN\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
 
 // ApplySchema creates the base schema if tables don't exist.
 func (d *DB) ApplySchema() error {
@@ -207,12 +198,10 @@ func (d *DB) applyMigrationSQL(sqlText string) error {
 			continue
 		}
 
-		if d.addedColumnAlreadyExists(stmt) {
-			continue
-		}
-
 		if _, err := d.Exec(stmt); err != nil {
-			return err
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+				return err
+			}
 		}
 	}
 	return nil
@@ -228,49 +217,6 @@ func stripSQLLineComments(sqlText string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
-}
-
-func (d *DB) addedColumnAlreadyExists(stmt string) bool {
-	matches := addColumnRe.FindStringSubmatch(stmt)
-	if len(matches) != 3 {
-		return false
-	}
-	exists, err := d.columnExists(matches[1], matches[2])
-	if err != nil {
-		slog.Warn("Failed to check migration column existence", "table", matches[1], "column", matches[2], "error", err)
-		return false
-	}
-	return exists
-}
-
-func (d *DB) columnExists(table, column string) (bool, error) {
-	rows, err := d.Query("PRAGMA table_info(" + table + ")")
-	if err != nil {
-		return false, err
-	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			slog.Warn("Failed to close PRAGMA rows", "error", closeErr)
-		}
-	}()
-
-	for rows.Next() {
-		var cid int
-		var name, dataType string
-		var notNull int
-		var defaultValue sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
-			return false, err
-		}
-		if strings.EqualFold(name, column) {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return false, err
-	}
-	return false, nil
 }
 
 // InitDatabase applies schema and migrations.

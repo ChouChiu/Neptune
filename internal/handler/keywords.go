@@ -16,6 +16,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+const (
+	keywordCacheTTL       = 60 // seconds
+	maxKeywordPatternLen  = 200
+	maxKeywordReplyLength = 4096
+)
+
 // keywordCacheEntry holds compiled keyword rules for a group.
 type keywordCacheEntry struct {
 	rules     []compiledKeywordRule
@@ -35,52 +41,38 @@ var (
 	keywordCacheMu sync.RWMutex
 )
 
-const keywordCacheTTL = 60 // seconds
-
-// getCachedKeywords returns cached keyword rules for a group, refreshing if expired.
+// getCachedKeywords returns cached keyword rules for a group, refreshing safely on expiry.
 func getCachedKeywords(database *db.DB, groupID int64) []compiledKeywordRule {
 	now := time.Now().UnixMilli()
 
 	keywordCacheMu.RLock()
 	cached, ok := keywordCache[groupID]
 	keywordCacheMu.RUnlock()
-
 	if ok && cached.expiresAt > now {
 		return cached.rules
 	}
 
-	// Refresh in background (non-blocking)
-	go func() {
-		rules, err := refreshKeywords(database, groupID)
-		if err != nil {
-			slog.Error("Failed to refresh keyword cache", "group_id", groupID, "error", err)
-			return
-		}
-		keywordCacheMu.Lock()
-		keywordCache[groupID] = &keywordCacheEntry{
-			rules:     rules,
-			expiresAt: time.Now().UnixMilli() + keywordCacheTTL*1000,
-		}
-		keywordCacheMu.Unlock()
-	}()
+	keywordCacheMu.Lock()
+	defer keywordCacheMu.Unlock()
 
-	// Return stale cache if available
-	if ok {
+	now = time.Now().UnixMilli()
+	cached, ok = keywordCache[groupID]
+	if ok && cached.expiresAt > now {
 		return cached.rules
 	}
 
-	// No cache at all - block and fetch
 	rules, err := refreshKeywords(database, groupID)
 	if err != nil {
 		slog.Error("Failed to fetch keywords", "group_id", groupID, "error", err)
+		if ok {
+			return cached.rules
+		}
 		return nil
 	}
-	keywordCacheMu.Lock()
 	keywordCache[groupID] = &keywordCacheEntry{
 		rules:     rules,
-		expiresAt: time.Now().UnixMilli() + keywordCacheTTL*1000,
+		expiresAt: now + keywordCacheTTL*1000,
 	}
-	keywordCacheMu.Unlock()
 	return rules
 }
 
@@ -127,6 +119,24 @@ func invalidateKeywordCache(groupID int64) {
 	keywordCacheMu.Unlock()
 }
 
+// splitCommandKeyAndReply splits "<pattern><whitespace><reply>" supporting spaces, tabs, and newlines.
+func splitCommandKeyAndReply(args string) (string, string, bool) {
+	args = strings.TrimSpace(args)
+	if args == "" {
+		return "", "", false
+	}
+	idx := strings.IndexAny(args, " \t\n\r")
+	if idx == -1 {
+		return "", "", false
+	}
+	key := args[:idx]
+	reply := strings.TrimSpace(args[idx+1:])
+	if key == "" || reply == "" {
+		return "", "", false
+	}
+	return key, reply, true
+}
+
 // HandleKeywordMatch checks if a group message matches any keyword rules.
 // Returns true if a match was found and replied.
 func HandleKeywordMatch(ctx context.Context, b *tgbot.Bot, database *db.DB, update *models.Update) bool {
@@ -153,26 +163,20 @@ func HandleKeywordMatch(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		return false
 	}
 
-	nickname := ""
+	var (
+		nickname string
+		userID   int64
+	)
 	if update.Message.From != nil {
 		nickname = util.GetNickname(update.Message.From)
-	}
-
-	var userID int64
-	if update.Message.From != nil {
 		userID = update.Message.From.ID
-	}
-
-	groupName := ""
-	if update.Message.Chat.Title != "" {
-		groupName = update.Message.Chat.Title
 	}
 
 	replyContent := util.ReplacePlaceholders(
 		util.EscapeMd(matched.ReplyContent),
 		util.EscapeMd(nickname),
 		userID,
-		util.EscapeMd(groupName),
+		util.EscapeMd(update.Message.Chat.Title),
 		true,
 	)
 
@@ -192,20 +196,14 @@ func matchKeyword(keywords []compiledKeywordRule, text string) *model.KeywordRul
 	for _, compiled := range keywords {
 		rule := compiled.rule
 		if rule.IsRegex != 0 {
-			if compiled.regex != nil && compiled.regex.MatchString(text) {
-				return &rule
-			}
-			if compiled.regex != nil && compiled.regex.MatchString(simplifiedText) {
+			if compiled.regex != nil && (compiled.regex.MatchString(text) || compiled.regex.MatchString(simplifiedText)) {
 				return &rule
 			}
 			if compiled.simplifiedRegex != nil && compiled.simplifiedRegex.MatchString(simplifiedText) {
 				return &rule
 			}
-		} else {
-			// Plain matching - only test simplified contains
-			if strings.Contains(simplifiedText, compiled.simplifiedPattern) {
-				return &rule
-			}
+		} else if strings.Contains(simplifiedText, compiled.simplifiedPattern) {
+			return &rule
 		}
 	}
 	return nil
@@ -213,137 +211,102 @@ func matchKeyword(keywords []compiledKeywordRule, text string) *model.KeywordRul
 
 // AddKeyword returns a handler for the /addkeyword command.
 func AddKeyword(database *db.DB) tgbot.HandlerFunc {
-	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-		allowed, groupID := requireAdmin(ctx, b, database, update)
-		if !allowed {
-			return
-		}
-
-		args := ""
-		if update.Message != nil && update.Message.Text != "" {
-			args = commandArgs(update.Message.Text, "/addkeyword")
-		}
-		args = trimSpace(args)
-
-		if args == "" {
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID:          update.Message.Chat.ID,
-				Text:            "用法: /addkeyword <关键词> <回复内容>",
-				ReplyParameters: util.ReplyOptions(update.Message),
-			})
-			return
-		}
-
-		spaceIdx := strings.Index(args, " ")
-		if spaceIdx == -1 {
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID:          update.Message.Chat.ID,
-				Text:            "请同时提供关键词和回复内容。",
-				ReplyParameters: util.ReplyOptions(update.Message),
-			})
-			return
-		}
-
-		keyword := args[:spaceIdx]
-		reply := args[spaceIdx+1:]
-
-		if len(keyword) > 200 {
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID:          update.Message.Chat.ID,
-				Text:            "关键词过长（最大 200 字符）。",
-				ReplyParameters: util.ReplyOptions(update.Message),
-			})
-			return
-		}
-
-		if len(reply) > 4096 {
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID:          update.Message.Chat.ID,
-				Text:            "回复内容过长（最大 4096 字符）。",
-				ReplyParameters: util.ReplyOptions(update.Message),
-			})
-			return
-		}
-
-		if err := database.AddKeyword(groupID, keyword, false, reply, ""); err != nil {
-			slog.Error("Failed to add keyword", "error", err)
-			return
-		}
-		invalidateKeywordCache(groupID)
-
-		sendMessage(ctx, b, &tgbot.SendMessageParams{
-			ChatID:          update.Message.Chat.ID,
-			Text:            fmt.Sprintf("✅ 已添加关键词规则: %s", keyword),
-			ReplyParameters: util.ReplyOptions(update.Message),
-		})
-	}
+	return addKeywordHandler(database, false)
 }
 
 // AddRegex returns a handler for the /addregex command.
 func AddRegex(database *db.DB) tgbot.HandlerFunc {
+	return addKeywordHandler(database, true)
+}
+
+func addKeywordHandler(database *db.DB, isRegex bool) tgbot.HandlerFunc {
+	cmdName := "/addkeyword"
+	label := "关键词"
+	usage := "用法: /addkeyword <关键词> <回复内容>"
+	missingErr := "请同时提供关键词和回复内容。"
+	ruleKind := "关键词规则"
+	if isRegex {
+		cmdName = "/addregex"
+		label = "正则表达式"
+		usage = "用法: /addregex <正则表达式> <回复内容>"
+		missingErr = "请同时提供正则表达式和回复内容。"
+		ruleKind = "正则规则"
+	}
+
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		allowed, groupID := requireAdmin(ctx, b, database, update)
 		if !allowed {
 			return
 		}
 
-		args := ""
-		if update.Message != nil && update.Message.Text != "" {
-			args = commandArgs(update.Message.Text, "/addregex")
-		}
-		args = trimSpace(args)
-
+		args := util.CommandArgs(update.Message.Text, cmdName)
 		if args == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
-				Text:            "用法: /addregex <正则表达式> <回复内容>",
+				Text:            usage,
 				ReplyParameters: util.ReplyOptions(update.Message),
 			})
 			return
 		}
 
-		spaceIdx := strings.Index(args, " ")
-		if spaceIdx == -1 {
+		pattern, reply, ok := splitCommandKeyAndReply(args)
+		if !ok {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
-				Text:            "请同时提供正则表达式和回复内容。",
+				Text:            missingErr,
 				ReplyParameters: util.ReplyOptions(update.Message),
 			})
 			return
 		}
 
-		pattern := args[:spaceIdx]
-		reply := args[spaceIdx+1:]
-
-		if len(pattern) > 200 {
+		if len(pattern) > maxKeywordPatternLen {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
-				Text:            "正则表达式过长（最大 200 字符）。",
+				Text:            fmt.Sprintf("%s过长（最大 %d 字符）。", label, maxKeywordPatternLen),
 				ReplyParameters: util.ReplyOptions(update.Message),
 			})
 			return
 		}
 
-		compiledPattern, err := compileKeywordRegex(pattern)
-		if err != nil {
+		if len(reply) > maxKeywordReplyLength {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
-				Text:            fmt.Sprintf("正则表达式无效：%s", err),
+				Text:            fmt.Sprintf("回复内容过长（最大 %d 字符）。", maxKeywordReplyLength),
 				ReplyParameters: util.ReplyOptions(update.Message),
 			})
 			return
 		}
-		_ = compiledPattern.MatchString(strings.Repeat("a", 1000))
 
-		if err := database.AddKeyword(groupID, pattern, true, reply, ""); err != nil {
-			slog.Error("Failed to add regex", "error", err)
+		if isRegex {
+			if _, err := compileKeywordRegex(pattern); err != nil {
+				sendMessage(ctx, b, &tgbot.SendMessageParams{
+					ChatID:          update.Message.Chat.ID,
+					Text:            fmt.Sprintf("正则表达式无效：%s", err),
+					ReplyParameters: util.ReplyOptions(update.Message),
+				})
+				return
+			}
+			if simplified := util.ToSimplified(pattern); simplified != pattern {
+				if _, err := compileKeywordRegex(simplified); err != nil {
+					sendMessage(ctx, b, &tgbot.SendMessageParams{
+						ChatID:          update.Message.Chat.ID,
+						Text:            fmt.Sprintf("正则表达式无效：%s", err),
+						ReplyParameters: util.ReplyOptions(update.Message),
+					})
+					return
+				}
+			}
+		}
+
+		if err := database.AddKeyword(groupID, pattern, isRegex, reply, ""); err != nil {
+			slog.Error("Failed to add keyword rule", "is_regex", isRegex, "error", err)
 			return
 		}
 		invalidateKeywordCache(groupID)
 
 		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
-			Text:            fmt.Sprintf("✅ 已添加正则规则: %s", pattern),
+			Text:            fmt.Sprintf("✅ 已添加%s: %s", ruleKind, pattern),
 			ReplyParameters: util.ReplyOptions(update.Message),
 		})
 	}
@@ -382,25 +345,16 @@ func ListKeywords(database *db.DB) tgbot.HandlerFunc {
 		}
 		text := fmt.Sprintf("📋 *关键词规则*\n\n%s", util.EscapeMd(strings.Join(lines, "\n")))
 
-		_, err = b.SendMessage(ctx, &tgbot.SendMessageParams{
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          update.Message.Chat.ID,
 			Text:            text,
 			ParseMode:       models.ParseModeMarkdown,
 			ReplyParameters: util.ReplyOptions(update.Message),
 		})
-		if err != nil {
-			// Fallback to plain text
-			plainText := fmt.Sprintf("📋 关键词规则\n\n%s", strings.Join(lines, "\n"))
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID:          update.Message.Chat.ID,
-				Text:            plainText,
-				ReplyParameters: util.ReplyOptions(update.Message),
-			})
-		}
 	}
 }
 
-// RemoveKeyword returns a handler for the /removekeyword command.
+// RemoveKeywordCmd returns a handler for the /removekeyword command.
 func RemoveKeywordCmd(database *db.DB) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		allowed, groupID := requireAdmin(ctx, b, database, update)
@@ -408,12 +362,7 @@ func RemoveKeywordCmd(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		keyword := ""
-		if update.Message != nil && update.Message.Text != "" {
-			keyword = commandArgs(update.Message.Text, "/removekeyword")
-		}
-		keyword = trimSpace(keyword)
-
+		keyword := util.CommandArgs(update.Message.Text, "/removekeyword")
 		if keyword == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,

@@ -3,31 +3,12 @@ package handler
 import (
 	"context"
 	"log/slog"
-	"strings"
 
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/util"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
-
-func commandArgs(text, command string) string {
-	text = trimSpace(text)
-	if text == "" {
-		return ""
-	}
-
-	fields := strings.Fields(text)
-	if len(fields) == 0 {
-		return ""
-	}
-
-	name := fields[0]
-	if name != command && !strings.HasPrefix(name, command+"@") {
-		return ""
-	}
-	return trimSpace(strings.TrimPrefix(text, name))
-}
 
 // requireGroupReply checks group context and sends an error if in private chat.
 func requireGroupReply(ctx context.Context, b *tgbot.Bot, update *models.Update) (bool, int64) {
@@ -129,22 +110,6 @@ func requireAdmin(ctx context.Context, b *tgbot.Bot, database *db.DB, update *mo
 		})
 	}
 	return allowed, groupID
-}
-
-// getBotUsername retrieves the bot's username, caching it after the first call.
-var cachedBotUsername string
-
-func getBotUsername(ctx context.Context, b *tgbot.Bot) string {
-	if cachedBotUsername != "" {
-		return cachedBotUsername
-	}
-	me, err := b.GetMe(ctx)
-	if err != nil {
-		slog.Error("Failed to get bot username", "error", err)
-		return ""
-	}
-	cachedBotUsername = me.Username
-	return cachedBotUsername
 }
 
 // chatMemberUser extracts the User from a ChatMember discriminated union.

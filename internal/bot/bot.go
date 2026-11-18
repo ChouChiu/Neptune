@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/handler"
@@ -18,12 +19,22 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 			loggingMiddleware,
 			recoveryMiddleware,
 			groupInitMiddleware(database),
+			unverifiedMessageMiddleware(database, cfg),
 		),
-		tgbot.WithDefaultHandler(handler.Orchestrator(database, cfg)),
+		tgbot.WithDefaultHandler(handler.Orchestrator(database)),
 		tgbot.WithSkipGetMe(),
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.BotUsername == "" {
+		me, err := b.GetMe(context.Background())
+		if err != nil {
+			slog.Warn("Failed to fetch bot username via getMe", "error", err)
+		} else {
+			cfg.BotUsername = strings.TrimPrefix(me.Username, "@")
+		}
 	}
 
 	// Helper to register command with optional bot username suffix
@@ -40,13 +51,13 @@ func New(cfg *model.Config, database *db.DB) (*tgbot.Bot, error) {
 	registerCommand("connect", handler.Connect(database))
 	registerCommand("switch", handler.Switch(database))
 
-	registerCommand("start", handler.StartVerify(database, nil))
+	registerCommand("start", handler.StartVerify(database))
 	registerCommand("setwelcome", handler.SetWelcome(database))
 	registerCommand("enablewelcome", handler.EnableWelcome(database))
 	registerCommand("disablewelcome", handler.DisableWelcome(database))
 	registerCommand("setverifybutton", handler.SetVerifyButton(database))
 	registerCommand("setverifytimeout", handler.SetVerifyTimeout(database))
-	registerCommand("testverify", handler.TestVerify(database))
+	registerCommand("testverify", handler.TestVerify(database, cfg.BotUsername))
 	registerCommand("rule", handler.Rule(database))
 	registerCommand("addkeyword", handler.AddKeyword(database))
 	registerCommand("addregex", handler.AddRegex(database))

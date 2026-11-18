@@ -14,16 +14,20 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ChouChiu/neptune/internal/util"
 )
 
 const (
-	telegramAPI      = "https://api.telegram.org"
-	maxMessageLength = 4096
-	maxRetries       = 3
-	retryDelay       = 1 * time.Second
+	telegramAPI       = "https://api.telegram.org"
+	maxMessageLength  = 4096
+	maxRetries        = 3
+	retryDelay        = 1 * time.Second
+	httpClientTimeout = 15 * time.Second
 )
+
+var httpClient = &http.Client{Timeout: httpClientTimeout}
 
 // GitHubRelease represents a GitHub release webhook payload.
 type GitHubRelease struct {
@@ -51,16 +55,7 @@ func VerifySignature(body []byte, signatureHeader string, secret string) bool {
 	mac.Write(body)
 	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
 
-	if len(expected) != len(signatureHeader) {
-		return false
-	}
-
-	// Constant-time comparison
-	var result byte
-	for i := 0; i < len(expected); i++ {
-		result |= expected[i] ^ signatureHeader[i]
-	}
-	return result == 0
+	return hmac.Equal([]byte(expected), []byte(signatureHeader))
 }
 
 // calloutRe matches GitHub callout markers.
@@ -177,6 +172,20 @@ func ConvertGfmToMarkdownV2(gfm string) string {
 	return store.Restore(util.EscapeMd(text))
 }
 
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	if maxRunes == 1 {
+		return "…"
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
 // FormatReleaseMessage formats a GitHub release into a Telegram MarkdownV2 message.
 func FormatReleaseMessage(release *GitHubRelease) string {
 	tagName := util.EscapeMd(release.Release.TagName)
@@ -189,82 +198,93 @@ func FormatReleaseMessage(release *GitHubRelease) string {
 		header = fmt.Sprintf("🎉 Kazumi %s for OHOS 已发布", tagName)
 	}
 
-	releaseURL := release.Release.HTMLURL
-	linkLine := util.MarkdownLink("🔗 Release 页面", releaseURL)
+	linkLine := util.MarkdownLink("🔗 Release 页面", release.Release.HTMLURL)
+	baseLen := utf8.RuneCountInString(header) + utf8.RuneCountInString(linkLine) + 4
+	maxBodyRunes := maxMessageLength - baseLen
 
-	suffix := "\n\n" + linkLine
-	maxBodyLength := maxMessageLength - len(header) - len(suffix) - 4
-
-	var body string
+	var rawBody string
 	if release.Release.Body != nil {
-		body = strings.TrimSpace(*release.Release.Body)
-		if len(body) > maxBodyLength {
-			body = body[:maxBodyLength] + "…"
+		rawBody = strings.TrimSpace(*release.Release.Body)
+	}
+
+	if rawBody == "" || maxBodyRunes <= 0 {
+		return fmt.Sprintf("%s\n\n%s", header, linkLine)
+	}
+
+	candidate := truncateRunes(rawBody, maxBodyRunes)
+	bodyMd := ConvertGfmToMarkdownV2(candidate)
+	if utf8.RuneCountInString(bodyMd)+baseLen > maxMessageLength {
+		lo, hi := 0, utf8.RuneCountInString(candidate)
+		best := ""
+		for lo <= hi {
+			mid := (lo + hi) / 2
+			md := ConvertGfmToMarkdownV2(truncateRunes(rawBody, mid))
+			if utf8.RuneCountInString(md)+baseLen <= maxMessageLength {
+				best = md
+				lo = mid + 1
+			} else {
+				hi = mid - 1
+			}
 		}
+		bodyMd = best
 	}
 
-	var message string
-	if body != "" {
-		bodyMd := ConvertGfmToMarkdownV2(body)
-		message = fmt.Sprintf("%s\n\n%s\n\n%s", header, bodyMd, linkLine)
-	} else {
-		message = fmt.Sprintf("%s\n\n%s", header, linkLine)
+	if bodyMd == "" {
+		return fmt.Sprintf("%s\n\n%s", header, linkLine)
 	}
-
-	return message
+	return fmt.Sprintf("%s\n\n%s\n\n%s", header, bodyMd, linkLine)
 }
 
 // SendToTelegram sends a message to a Telegram channel with retry logic.
 func SendToTelegram(ctx context.Context, botToken string, channelID string, text string) error {
 	url := fmt.Sprintf("%s/bot%s/sendMessage", telegramAPI, botToken)
 
+	type sendMessageReq struct {
+		ChatID    string `json:"chat_id"`
+		Text      string `json:"text"`
+		ParseMode string `json:"parse_mode"`
+	}
+
+	payload, err := json.Marshal(sendMessageReq{
+		ChatID:    channelID,
+		Text:      text,
+		ParseMode: "MarkdownV2",
+	})
+	if err != nil {
+		return err
+	}
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		slog.Info("Sending release to channel", "channelID", channelID, "attempt", attempt)
 
-		type sendMessageReq struct {
-			ChatID    string `json:"chat_id"`
-			Text      string `json:"text"`
-			ParseMode string `json:"parse_mode"`
-		}
-
-		body, err := json.Marshal(sendMessageReq{
-			ChatID:    channelID,
-			Text:      text,
-			ParseMode: "MarkdownV2",
-		})
-		if err != nil {
-			return err
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			slog.Error("Release send error", "attempt", attempt, "error", err)
-			if attempt < maxRetries {
-				time.Sleep(retryDelay)
+		} else {
+			respBody, _ := io.ReadAll(resp.Body)
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				slog.Warn("Release response close error", "error", closeErr)
 			}
-			continue
-		}
 
-		respBody, _ := io.ReadAll(resp.Body)
-		if err := resp.Body.Close(); err != nil {
-			slog.Warn("Release response close error", "error", err)
+			if resp.StatusCode == http.StatusOK {
+				slog.Info("Release sent successfully", "attempt", attempt)
+				return nil
+			}
+			slog.Error("Release send failed", "attempt", attempt, "status", resp.StatusCode, "body", string(respBody))
 		}
-
-		if resp.StatusCode == http.StatusOK {
-			slog.Info("Release sent successfully", "attempt", attempt)
-			return nil
-		}
-
-		slog.Error("Release send failed", "attempt", attempt, "status", resp.StatusCode, "body", string(respBody))
 
 		if attempt < maxRetries {
-			time.Sleep(retryDelay)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryDelay):
+			}
 		}
 	}
 

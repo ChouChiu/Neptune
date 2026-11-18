@@ -46,7 +46,7 @@ func VerifyTelegramAuth(botToken string, data map[string]string) bool {
 	mac.Write([]byte(dataCheckString))
 	computed := hex.EncodeToString(mac.Sum(nil))
 
-	if !timingSafeEqual(computed, hash) {
+	if !hmac.Equal([]byte(computed), []byte(hash)) {
 		return false
 	}
 
@@ -100,21 +100,9 @@ func VerifySession(botToken string, cookie string) int64 {
 	mac.Write([]byte(payload))
 	expected := hex.EncodeToString(mac.Sum(nil))
 
-	if !timingSafeEqual(expected, parts[2]) {
+	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
 		return 0
 	}
 
 	return userID
-}
-
-// timingSafeEqual performs a constant-time string comparison.
-func timingSafeEqual(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var result byte
-	for i := 0; i < len(a); i++ {
-		result |= a[i] ^ b[i]
-	}
-	return result == 0
 }

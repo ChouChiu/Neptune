@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/ChouChiu/neptune/internal/db"
@@ -13,24 +14,25 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-const ruleAckWaitSeconds = 10
+const (
+	ruleAckWaitSeconds = 10
+	maxVerifyTimeout   = 86400
+)
 
 // buildRuleText builds the rule acknowledgment text with countdown.
 func buildRuleText(rule string, remaining int) string {
-	countdown := ""
+	countdown := "\n\n✅ 阅读时间已到，请点击下方按钮"
 	if remaining > 0 {
 		countdown = fmt.Sprintf("\n\n⏱️ %d 秒后可点击下方按钮", remaining)
-	} else {
-		countdown = "\n\n✅ 阅读时间已到，请点击下方按钮"
 	}
 	return fmt.Sprintf("📋 *群规*\n\n%s%s", util.EscapeMd(rule), countdown)
 }
 
 // StartVerify returns a handler for the /start command.
 // In private chat, it handles verify payloads; otherwise shows welcome.
-func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot.HandlerFunc {
+func StartVerify(database *db.DB) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-		if update.Message == nil || update.Message.Chat.Type != "private" {
+		if update.Message == nil || update.Message.Chat.Type != "private" || update.Message.From == nil {
 			return
 		}
 
@@ -48,26 +50,25 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 			return
 		}
 
-		parts := strings.SplitN(payload[6:], "_", 2)
+		parts := strings.SplitN(payload[len("verify"):], "_", 2)
 		if len(parts) < 2 {
 			return
 		}
 
-		groupID := strToInt64(parts[0])
-		targetUserID := strToInt64(parts[1])
-		if groupID == 0 || targetUserID == 0 {
+		groupID, err1 := strconv.ParseInt(parts[0], 10, 64)
+		targetUserID, err2 := strconv.ParseInt(parts[1], 10, 64)
+		if err1 != nil || err2 != nil || groupID == 0 || targetUserID == 0 {
 			return
 		}
 
-		if update.Message.From == nil || update.Message.From.ID != targetUserID {
+		userID := update.Message.From.ID
+		if userID != targetUserID {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "这不是你的验证链接。",
 			})
 			return
 		}
-
-		userID := update.Message.From.ID
 
 		config, err := database.GetGroupConfig(groupID)
 		if err != nil || config == nil {
@@ -78,19 +79,44 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 			return
 		}
 
-		existing, _ := database.GetPendingVerification(userID, groupID)
+		existing, err := database.GetPendingVerification(userID, groupID)
+		if err != nil {
+			slog.Error("Failed to get pending verification", "user_id", userID, "group_id", groupID, "error", err)
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "验证状态读取失败，请稍后重试。",
+			})
+			return
+		}
+		if existing != nil && existing.Attempts >= maxCaptchaAttempts {
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "验证失败次数过多，请重新加入群组。",
+			})
+			return
+		}
+		if existing != nil && existing.ExpiresAt <= util.CurrentTimestamp() {
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "验证已过期，请重新加入群组。",
+			})
+			return
+		}
+
 		var welcomeMsgID *int64
 		if existing != nil {
 			welcomeMsgID = existing.WelcomeMessageID
 		}
 
-		if config.Rule != "" {
+		if config.Rule != "" && (existing == nil || existing.RuleAckDone == 0) {
 			showTime := util.CurrentTimestamp()
-			_ = database.AddPendingVerification(
+			if err := database.SetPendingCaptcha(
 				userID, groupID, "",
-				util.CurrentTimestamp()+int64(config.VerifyTimeout),
+				showTime+int64(config.VerifyTimeout),
 				welcomeMsgID, false,
-			)
+			); err != nil {
+				slog.Error("Failed to store pending rule acknowledgment", "error", err)
+			}
 
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:    update.Message.Chat.ID,
@@ -107,7 +133,8 @@ func StartVerify(database *db.DB, cfg *interface{ IsReuseCaptcha() bool }) tgbot
 			return
 		}
 
-		sent := sendCaptcha(ctx, b, database, userID, groupID, config.VerifyTimeout, welcomeMsgID)
+		ruleAckDone := config.Rule != "" && existing != nil && existing.RuleAckDone != 0
+		sent := sendCaptcha(ctx, b, database, userID, groupID, config.VerifyTimeout, welcomeMsgID, ruleAckDone)
 		if !sent {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
@@ -124,16 +151,15 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		data := update.CallbackQuery.Data
 		// Format: rule_ack:<groupId>:<showTime>
-		parts := strings.SplitN(data, ":", 3)
+		parts := strings.SplitN(update.CallbackQuery.Data, ":", 3)
 		if len(parts) < 3 {
 			return
 		}
 
-		groupID := strToInt64(parts[1])
-		showTime := strToInt64(parts[2])
-		if groupID == 0 || showTime == 0 {
+		groupID, err1 := strconv.ParseInt(parts[1], 10, 64)
+		showTime, err2 := strconv.ParseInt(parts[2], 10, 64)
+		if err1 != nil || err2 != nil || groupID == 0 || showTime == 0 {
 			return
 		}
 
@@ -178,11 +204,22 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		existing, _ := database.GetPendingVerification(userID, groupID)
-		if existing == nil {
+		existing, err := database.GetPendingVerification(userID, groupID)
+		if err != nil {
+			slog.Error("Failed to get pending verification in rule_ack", "error", err)
+			return
+		}
+		if existing == nil || existing.ExpiresAt <= now {
 			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 				CallbackQueryID: update.CallbackQuery.ID,
 				Text:            "验证已过期，请重新加入群组。",
+			})
+			return
+		}
+		if existing.Attempts >= maxCaptchaAttempts {
+			answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: update.CallbackQuery.ID,
+				Text:            "验证失败次数过多，请重新加入群组。",
 			})
 			return
 		}
@@ -195,7 +232,9 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		_ = database.SetRuleAckDone(userID, groupID)
+		if err := database.SetRuleAckDone(userID, groupID); err != nil {
+			slog.Error("Failed to set rule_ack_done", "error", err)
+		}
 
 		answerCallbackQuery(ctx, b, &tgbot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
@@ -214,12 +253,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 			})
 		}
 
-		var welcomeMsgID *int64
-		if existing.WelcomeMessageID != nil {
-			welcomeMsgID = existing.WelcomeMessageID
-		}
-
-		sent := sendCaptcha(ctx, b, database, userID, groupID, config.VerifyTimeout, welcomeMsgID)
+		sent := sendCaptcha(ctx, b, database, userID, groupID, config.VerifyTimeout, existing.WelcomeMessageID, true)
 		if !sent {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.CallbackQuery.From.ID,
@@ -230,7 +264,7 @@ func RuleAckCallback(database *db.DB) tgbot.HandlerFunc {
 }
 
 // sendCaptcha generates and sends a captcha to the user in private chat.
-func sendCaptcha(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, groupID int64, timeout int, welcomeMsgID *int64) bool {
+func sendCaptcha(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, groupID int64, timeout int, welcomeMsgID *int64, ruleAckDone bool) bool {
 	captcha := util.GenerateCaptcha(5)
 
 	expiresAt := util.CurrentTimestamp() + int64(timeout)
@@ -246,10 +280,10 @@ func sendCaptcha(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, gro
 		return false
 	}
 
-	if err := database.AddPendingVerification(
-		userID, groupID, captcha.Text, expiresAt, welcomeMsgID, false,
+	if err := database.SetPendingCaptcha(
+		userID, groupID, captcha.Text, expiresAt, welcomeMsgID, ruleAckDone,
 	); err != nil {
-		slog.Error("Failed to add pending verification for captcha", "error", err)
+		slog.Error("Failed to store pending captcha", "error", err)
 		return false
 	}
 
@@ -264,12 +298,7 @@ func SetVerifyButton(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		text := ""
-		if update.Message != nil && update.Message.Text != "" {
-			text = commandArgs(update.Message.Text, "/setverifybutton")
-		}
-		text = trimSpace(text)
-
+		text := util.CommandArgs(update.Message.Text, "/setverifybutton")
 		if text == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -300,12 +329,7 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		timeoutStr := ""
-		if update.Message != nil && update.Message.Text != "" {
-			timeoutStr = commandArgs(update.Message.Text, "/setverifytimeout")
-		}
-		timeoutStr = trimSpace(timeoutStr)
-
+		timeoutStr := util.CommandArgs(update.Message.Text, "/setverifytimeout")
 		if timeoutStr == "" {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -315,11 +339,11 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		timeout := strToInt(timeoutStr)
-		if timeout <= 0 {
+		timeout, err := strconv.Atoi(timeoutStr)
+		if err != nil || timeout <= 0 || timeout > maxVerifyTimeout {
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
-				Text:            "请输入有效的秒数。",
+				Text:            fmt.Sprintf("请输入有效的秒数（1-%d）。", maxVerifyTimeout),
 				ReplyParameters: util.ReplyOptions(update.Message),
 			})
 			return
@@ -339,7 +363,7 @@ func SetVerifyTimeout(database *db.DB) tgbot.HandlerFunc {
 }
 
 // TestVerify returns a handler for the /testverify command.
-func TestVerify(database *db.DB) tgbot.HandlerFunc {
+func TestVerify(database *db.DB, configuredBotUsername string) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.Message == nil {
 			return
@@ -380,82 +404,30 @@ func TestVerify(database *db.DB) tgbot.HandlerFunc {
 		nickname := util.GetNickname(update.Message.From)
 		groupTitle := update.Message.Chat.Title
 
-		botUsername := getBotUsername(ctx, b)
-		verifyURL := "https://t.me/" + botUsername + "?start=verify" + intToStr(groupID) + "_" + intToStr(userID)
+		botUsername := strings.TrimPrefix(configuredBotUsername, "@")
+		if botUsername == "" {
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
+				ChatID: update.Message.Chat.ID,
+				Text:   "验证配置错误：无法获取机器人用户名，请管理员检查 BOT_USERNAME。",
+			})
+			return
+		}
+
+		verifyURL := fmt.Sprintf("https://t.me/%s?start=verify%d_%d", botUsername, groupID, userID)
 
 		welcomeText := util.ReplacePlaceholders(
-			config.WelcomeMessage,
+			util.EscapeMd(config.WelcomeMessage),
 			util.EscapeMd(nickname),
 			userID,
-			escapeGroupTitle(groupTitle),
+			util.EscapeMd(groupTitle),
 			true,
 		)
-		plainWelcomeText := util.ReplacePlaceholders(
-			config.WelcomeMessage,
-			nickname,
-			userID,
-			groupTitle,
-			false,
-		)
 
-		replyMarkup := &models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{
-					{Text: config.VerifyButtonText, URL: verifyURL},
-				},
-			},
-		}
-
-		_, err = b.SendMessage(ctx, &tgbot.SendMessageParams{
-			ChatID:      update.Message.Chat.ID,
-			Text:        welcomeText,
-			ParseMode:   models.ParseModeMarkdown,
-			ReplyMarkup: replyMarkup,
-		})
-		if err != nil {
-			slog.Warn("TestVerify: MarkdownV2 failed, retrying as plain text", "error", err)
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID:      update.Message.Chat.ID,
-				Text:        plainWelcomeText,
-				ReplyMarkup: replyMarkup,
-			})
+		if _, err := sendVerificationWelcome(
+			ctx, b, update.Message.Chat.ID, update.Message.MessageThreadID,
+			welcomeText, config.VerifyButtonText, verifyURL,
+		); err != nil {
+			slog.Warn("TestVerify failed to send verification message", "error", err)
 		}
 	}
-}
-
-// strToInt64 converts a string to int64, returning 0 on error.
-func strToInt64(s string) int64 {
-	if len(s) == 0 {
-		return 0
-	}
-	negative := false
-	start := 0
-	if s[0] == '-' {
-		negative = true
-		start = 1
-	}
-	var n int64
-	for i := start; i < len(s); i++ {
-		c := s[i]
-		if c < '0' || c > '9' {
-			return 0
-		}
-		n = n*10 + int64(c-'0')
-	}
-	if negative {
-		return -n
-	}
-	return n
-}
-
-// strToInt converts a string to int, returning 0 on error.
-func strToInt(s string) int {
-	var n int
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n
 }

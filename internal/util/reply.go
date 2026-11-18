@@ -17,21 +17,21 @@ func ReplyOptions(msg *models.Message) *models.ReplyParameters {
 	}
 }
 
-// CommandArgs extracts the arguments after a command, stripping the bot username.
+// CommandArgs extracts the arguments after a command, stripping any @botname suffix.
 // For example, "/report@botname reason" → "reason", "/report reason" → "reason".
-// Returns empty string if no args.
-func CommandArgs(text, cmd string) string {
-	if len(text) <= len(cmd) {
+// Returns empty string if the command does not match or has no args.
+func CommandArgs(text, command string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
 		return ""
 	}
-	rest := text[len(cmd):]
-	// Strip @botname suffix: "/report@botname args" → "@botname args"
-	if idx := strings.Index(rest, " "); idx >= 0 {
-		// Has space after @botname: skip the @botname part
-		rest = rest[idx+1:]
-	} else if strings.HasPrefix(rest, "@") {
-		// Only @botname, no args
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
 		return ""
 	}
-	return strings.TrimSpace(rest)
+	name := fields[0]
+	if name != command && !strings.HasPrefix(name, command+"@") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(text, name))
 }

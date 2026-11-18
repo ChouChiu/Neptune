@@ -6,6 +6,8 @@ import (
 	"runtime/debug"
 
 	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/handler"
+	"github.com/ChouChiu/neptune/internal/model"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -74,6 +76,18 @@ func groupInitMiddleware(database *db.DB) tgbot.Middleware {
 				if err := database.InitGroup(update.ChatMember.Chat.ID); err != nil {
 					slog.Error("Failed to init group", "chat_id", update.ChatMember.Chat.ID, "error", err)
 				}
+			}
+			next(ctx, b, update)
+		}
+	}
+}
+
+// unverifiedMessageMiddleware intercepts group messages sent by unverified members.
+func unverifiedMessageMiddleware(database *db.DB, cfg *model.Config) tgbot.Middleware {
+	return func(next tgbot.HandlerFunc) tgbot.HandlerFunc {
+		return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			if handler.HandleUnverifiedGroupMessage(ctx, b, database, cfg.BotUsername, update) {
+				return
 			}
 			next(ctx, b, update)
 		}

@@ -53,7 +53,6 @@ func Warn(database *db.DB) tgbot.HandlerFunc {
 		}
 
 		reason := util.CommandArgs(update.Message.Text, "/warn")
-		reason = trimSpace(reason)
 
 		if err := database.AddWarning(adminGroupID, target.ID, update.Message.From.ID, reason); err != nil {
 			slog.Error("Failed to add warning", "error", err)

@@ -1,28 +1,30 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ChouChiu/neptune/internal/adminpanel/sessionctx"
 	"github.com/ChouChiu/neptune/internal/db"
 	"github.com/ChouChiu/neptune/internal/model"
+	"github.com/ChouChiu/neptune/internal/util"
 )
 
+var telegramHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 // getUserID extracts the admin user ID from the request context.
-// Context key "admin_user_id" is set by adminpanel.SessionAuthMiddleware.
 func getUserID(r *http.Request) int64 {
 	return sessionctx.UserID(r)
 }
 
 // handleApproved processes an approved report: deletes the message, adds a warning,
 // and sends Telegram notifications.
-func handleApproved(database *db.DB, botToken string, report *model.Report) {
+func handleApproved(database *db.DB, botToken string, report *model.Report, adminID int64) {
 	ctx := context.Background()
 
 	if report.ReportedMessageID != nil {
@@ -32,21 +34,23 @@ func handleApproved(database *db.DB, botToken string, report *model.Report) {
 		})
 	}
 
-	_ = database.AddWarning(report.GroupID, report.ReportedUserID, 0, fmt.Sprintf("举报通过: %s", report.Content))
+	if err := database.AddWarning(report.GroupID, report.ReportedUserID, adminID, fmt.Sprintf("举报通过: %s", report.Content)); err != nil {
+		slog.Error("Failed to record warning for approved report", "report_id", report.ID, "error", err)
+	}
 
 	preview := ""
 	if report.ReportedMessageText != "" {
-		preview = fmt.Sprintf("\n📄 被举报内容：「%s」", truncate(report.ReportedMessageText, 100))
+		preview = fmt.Sprintf("\n📄 被举报内容：「%s」", util.EscapeMd(truncate(report.ReportedMessageText, 100)))
 	}
 
 	groupMsg := fmt.Sprintf(
 		"⚠️ 用户 [%d](tg://user?id=%d) 被举报处理\n\n📝 举报原因：%s%s\n\n🚫 违规消息已删除，用户已被警告。请遵守群规。",
-		report.ReportedUserID, report.ReportedUserID, report.Content, preview,
+		report.ReportedUserID, report.ReportedUserID, util.EscapeMd(report.Content), preview,
 	)
 	tgAPICall(ctx, botToken, "sendMessage", map[string]any{
 		"chat_id":    report.GroupID,
 		"text":       groupMsg,
-		"parse_mode": "Markdown",
+		"parse_mode": "MarkdownV2",
 	})
 
 	reporterMsg := fmt.Sprintf(
@@ -83,15 +87,14 @@ func tgAPICall(ctx context.Context, botToken, method string, body map[string]any
 		return
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(jsonBody)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonBody))
 	if err != nil {
 		slog.Error("tgAPICall request error", "method", method, "error", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := telegramHTTPClient.Do(req)
 	if err != nil {
 		slog.Error("tgAPICall error", "method", method, "error", err)
 		return
@@ -107,10 +110,10 @@ func tgAPICall(ctx context.Context, botToken, method string, body map[string]any
 	}
 }
 
-func truncate(s string, max int) string {
+func truncate(s string, maxLen int) string {
 	runes := []rune(s)
-	if len(runes) <= max {
+	if len(runes) <= maxLen {
 		return s
 	}
-	return string(runes[:max]) + "…"
+	return string(runes[:maxLen]) + "…"
 }

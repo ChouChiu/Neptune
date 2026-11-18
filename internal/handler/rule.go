@@ -18,11 +18,7 @@ func Rule(database *db.DB) tgbot.HandlerFunc {
 			return
 		}
 
-		rule := ""
-		if update.Message != nil && update.Message.Text != "" {
-			rule = commandArgs(update.Message.Text, "/rule")
-		}
-		rule = trimSpace(rule)
+		rule := util.CommandArgs(update.Message.Text, "/rule")
 
 		if rule == "" {
 			config, err := database.GetGroupConfig(groupID)

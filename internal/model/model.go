@@ -1,12 +1,60 @@
 package model
 
+import (
+	"errors"
+	"log/slog"
+	"os"
+	"strconv"
+	"strings"
+)
+
+const (
+	defaultDBPath     = "data/neptune.db"
+	defaultListenAddr = ":8080"
+)
+
 // Config holds application configuration from environment variables.
 type Config struct {
 	BotToken            string
 	BotUsername         string
-	ReuseCaptcha        bool
 	GitHubWebhookSecret string
 	ReleaseChannelID    int64
+	DBPath              string
+	ListenAddr          string
+}
+
+// LoadConfigFromEnv loads and validates application configuration from environment variables.
+func LoadConfigFromEnv() (*Config, error) {
+	botToken := strings.TrimSpace(os.Getenv("BOT_TOKEN"))
+	if botToken == "" {
+		return nil, errors.New("BOT_TOKEN environment variable is required")
+	}
+
+	cfg := &Config{
+		BotToken:            botToken,
+		BotUsername:         strings.TrimPrefix(strings.TrimSpace(os.Getenv("BOT_USERNAME")), "@"),
+		GitHubWebhookSecret: strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SECRET")),
+		DBPath:              strings.TrimSpace(os.Getenv("DB_PATH")),
+		ListenAddr:          strings.TrimSpace(os.Getenv("LISTEN_ADDR")),
+	}
+
+	if cfg.DBPath == "" {
+		cfg.DBPath = defaultDBPath
+	}
+	if cfg.ListenAddr == "" {
+		cfg.ListenAddr = defaultListenAddr
+	}
+
+	if id := strings.TrimSpace(os.Getenv("RELEASE_CHANNEL_ID")); id != "" {
+		parsed, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			slog.Warn("Invalid RELEASE_CHANNEL_ID", "value", id, "error", err)
+		} else {
+			cfg.ReleaseChannelID = parsed
+		}
+	}
+
+	return cfg, nil
 }
 
 // GroupConfig represents a group's configuration.
@@ -30,27 +78,16 @@ type KeywordRule struct {
 	ReplyType    string `json:"reply_type"`
 }
 
-// AdminConnection represents an admin-group binding.
-type AdminConnection struct {
-	UserID  int64 `json:"user_id"`
-	GroupID int64 `json:"group_id"`
-}
-
-// AdminCurrentGroup tracks which group an admin is currently managing.
-type AdminCurrentGroup struct {
-	UserID  int64 `json:"user_id"`
-	GroupID int64 `json:"group_id"`
-}
-
 // PendingVerification represents a pending captcha verification.
 type PendingVerification struct {
-	UserID           int64  `json:"user_id"`
-	GroupID          int64  `json:"group_id"`
-	CaptchaText      string `json:"captcha_text"`
-	ExpiresAt        int64  `json:"expires_at"`
-	WelcomeMessageID *int64 `json:"welcome_message_id"`
-	Attempts         int    `json:"attempts"`
-	RuleAckDone      int    `json:"rule_ack_done"`
+	UserID            int64  `json:"user_id"`
+	GroupID           int64  `json:"group_id"`
+	CaptchaText       string `json:"captcha_text"`
+	ExpiresAt         int64  `json:"expires_at"`
+	WelcomeMessageID  *int64 `json:"welcome_message_id"`
+	Attempts          int    `json:"attempts"`
+	RuleAckDone       int    `json:"rule_ack_done"`
+	PromptedOnMessage int    `json:"prompted_on_message"`
 }
 
 // ActiveVote represents an active votekick session.
@@ -94,17 +131,4 @@ type Report struct {
 	ReviewedBy          *int64 `json:"reviewed_by"`
 	ReviewedAt          *int64 `json:"reviewed_at"`
 	CreatedAt           int64  `json:"created_at"`
-}
-
-// KVEntry represents a key-value entry (for AI context storage).
-type KVEntry struct {
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	ExpiresAt int64  `json:"expires_at"`
-}
-
-// Lock represents a distributed lock entry.
-type Lock struct {
-	Name      string `json:"name"`
-	ExpiresAt int64  `json:"expires_at"`
 }

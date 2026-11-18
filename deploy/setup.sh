@@ -70,19 +70,15 @@ else
 
 # ===== 必填 =====
 BOT_TOKEN=
-BOT_USERNAME=
-HERMES_API_URL=http://host.docker.internal:8642/v1
-HERMES_API_KEY=
 
 # ===== 建议配置 =====
+BOT_USERNAME=
 GITHUB_WEBHOOK_SECRET=
 RELEASE_CHANNEL_ID=
 
 # ===== 可选 =====
-REUSE_CAPTCHA=false
 LISTEN_ADDR=:8080
 DB_PATH=data/neptune.db
-DATA_DIR=./data
 EOF
   chmod 600 "$ENV_FILE"
   log "已创建 $ENV_FILE（权限 600）"

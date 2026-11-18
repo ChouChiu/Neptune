@@ -38,11 +38,12 @@ nano /opt/neptune/.env
 
 填入以下必填项：
 
-| 变量 | 获取方式 |
-|------|----------|
-| `BOT_TOKEN` | Telegram [@BotFather](https://t.me/BotFather) → `/newbot` |
-| `BOT_USERNAME` | BotFather 创建时分配的用户名（不含 `@`） |
-| `GITHUB_WEBHOOK_SECRET` | `openssl rand -hex 32` |
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `BOT_TOKEN` | 是 | Telegram [@BotFather](https://t.me/BotFather) → `/newbot` |
+| `BOT_USERNAME` | 建议 | BotFather 创建时分配的用户名（不含 `@`） |
+| `GITHUB_WEBHOOK_SECRET` | 建议 | `openssl rand -hex 32`（同时用于 `/set-webhook` 认证） |
+| `RELEASE_CHANNEL_ID` | 否 | GitHub Release 通知频道 ID |
 
 ## 第三步：启动服务
 
@@ -160,8 +161,7 @@ docker compose down
 ├── docker-compose.yml
 ├── .env                    # 配置文件（权限 600，gitignore）
 ├── data/
-│   ├── neptune.db          # SQLite 数据库
-│   └── captcha/            # 验证码图片
+│   └── neptune.db          # SQLite 数据库（WAL 模式）
 ├── migrations/             # SQL 迁移文件
 └── deploy/
     ├── setup.sh            # 初始化脚本

@@ -76,14 +76,24 @@ func ResolveReport(database *db.DB, botToken string) http.HandlerFunc {
 			return
 		}
 
-		if err := database.UpdateReportStatus(reportID, body.Status, userID); err != nil {
+		if report.Status != "pending" {
+			writeErrJSON(w, http.StatusConflict, "Report already resolved")
+			return
+		}
+
+		updated, err := database.ResolvePendingReport(reportID, body.Status, userID)
+		if err != nil {
 			writeErrJSON(w, http.StatusInternalServerError, "Failed to update report")
+			return
+		}
+		if !updated {
+			writeErrJSON(w, http.StatusConflict, "Report already resolved")
 			return
 		}
 
 		// Side effects: delete message, add warning, send notifications
 		if body.Status == "approved" {
-			handleApproved(database, botToken, report)
+			handleApproved(database, botToken, report, userID)
 		} else {
 			handleDismissed(botToken, report)
 		}

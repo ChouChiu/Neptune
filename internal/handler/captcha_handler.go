@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/ChouChiu/neptune/internal/db"
+	"github.com/ChouChiu/neptune/internal/model"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -19,7 +21,7 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		return false
 	}
 
-	text := update.Message.Text
+	text := strings.TrimSpace(update.Message.Text)
 	if text == "" || strings.HasPrefix(text, "/") {
 		return false
 	}
@@ -36,11 +38,11 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		return false
 	}
 
+	var active []model.PendingVerification
 	for _, v := range verifications {
 		groupID := v.GroupID
 
 		if v.Attempts >= maxCaptchaAttempts {
-			_ = database.RemovePendingVerification(userID, groupID)
 			sendMessage(ctx, b, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "验证失败次数过多，请重新加入群组。",
@@ -49,7 +51,6 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 		}
 
 		if strings.EqualFold(text, v.CaptchaText) {
-			// Delete welcome message in the group
 			if v.WelcomeMessageID != nil {
 				deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
 					ChatID:    groupID,
@@ -57,83 +58,51 @@ func HandleCaptchaReply(ctx context.Context, b *tgbot.Bot, database *db.DB, upda
 				})
 			}
 
-			// Unrestrict user
-			if err := unrestrictUser(ctx, b, groupID, userID); err != nil {
-				slog.Error("Failed to unrestrict user after captcha", "error", err)
-				sendMessage(ctx, b, &tgbot.SendMessageParams{
-					ChatID: update.Message.Chat.ID,
-					Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10001)",
-				})
-			} else {
-				member, err := b.GetChatMember(ctx, &tgbot.GetChatMemberParams{
-					ChatID: groupID,
-					UserID: userID,
-				})
-				if err != nil {
-					slog.Error("Failed to verify member permissions after captcha", "error", err)
-					sendMessage(ctx, b, &tgbot.SendMessageParams{
-						ChatID: update.Message.Chat.ID,
-						Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10002)",
-					})
-					return true
-				}
-				if !canMemberSendMessages(member) {
-					slog.Error("Member still cannot send messages after captcha", "group_id", groupID, "user_id", userID, "status", member.Type)
-					sendMessage(ctx, b, &tgbot.SendMessageParams{
-						ChatID: update.Message.Chat.ID,
-						Text:   "验证成功，但解除限制失败。请联系管理员。 (error: -10003)",
-					})
-					return true
-				}
-
-				_ = database.RemovePendingVerification(userID, groupID)
-				sendMessage(ctx, b, &tgbot.SendMessageParams{
-					ChatID: update.Message.Chat.ID,
-					Text:   "✅ 验证成功！你现在可以在群组中发言了。",
-				})
-			}
+			verifyAndUnrestrictMember(ctx, b, database, userID, groupID, update.Message.Chat.ID, v.PromptedOnMessage != 0)
 			return true
 		}
+
+		active = append(active, v)
 	}
 
-	// Increment attempts for all pending verifications
-	_ = database.IncrementVerificationAttempts(userID)
-
-	if len(verifications) > 0 {
-		first := verifications[0]
-		remaining := maxCaptchaAttempts - first.Attempts - 1
-		if remaining > 0 {
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID: update.Message.Chat.ID,
-				Text:   "❌ 验证码错误，还剩 " + intToStr(int64(remaining)) + " 次机会。",
-			})
-		} else {
-			// Remove all pending verifications for this user
-			for _, v := range verifications {
-				_ = database.RemovePendingVerification(userID, v.GroupID)
-			}
-			sendMessage(ctx, b, &tgbot.SendMessageParams{
-				ChatID: update.Message.Chat.ID,
-				Text:   "❌ 验证失败次数过多，请重新加入群组。",
-			})
-		}
+	if len(active) == 0 {
 		return true
 	}
 
-	return false
+	if err := database.IncrementVerificationAttempts(userID); err != nil {
+		slog.Error("Failed to increment verification attempts", "error", err)
+	}
+
+	remaining := maxCaptchaAttempts - active[0].Attempts - 1
+	if remaining > 0 {
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ 验证码错误，还剩 " + strconv.Itoa(remaining) + " 次机会。",
+		})
+	} else {
+		sendMessage(ctx, b, &tgbot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "❌ 验证失败次数过多，请重新加入群组。",
+		})
+	}
+	return true
 }
 
-func canMemberSendMessages(member *models.ChatMember) bool {
-	if member == nil {
-		return false
+func verifyAndUnrestrictMember(ctx context.Context, b *tgbot.Bot, database *db.DB, userID, groupID, dmChatID int64, restricted bool) {
+	if restricted {
+		if err := unrestrictUser(ctx, b, groupID, userID); err != nil {
+			slog.Error("Failed to unrestrict user after captcha", "group_id", groupID, "user_id", userID, "error", err)
+			sendMessage(ctx, b, &tgbot.SendMessageParams{
+				ChatID: dmChatID,
+				Text:   "验证成功，但解除限制失败。请联系管理员。",
+			})
+			return
+		}
 	}
 
-	switch member.Type {
-	case models.ChatMemberTypeOwner, models.ChatMemberTypeAdministrator, models.ChatMemberTypeMember:
-		return true
-	case models.ChatMemberTypeRestricted:
-		return member.Restricted != nil && member.Restricted.CanSendMessages
-	default:
-		return false
-	}
+	_ = database.RemovePendingVerification(userID, groupID)
+	sendMessage(ctx, b, &tgbot.SendMessageParams{
+		ChatID: dmChatID,
+		Text:   "✅ 验证成功！你现在可以在群组中发言了。",
+	})
 }
