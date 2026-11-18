@@ -104,8 +104,11 @@ func TestVerificationLifecycleAndAttempts(t *testing.T) {
 	}
 
 	// Re-joining resets attempts and prompted_on_message.
-	if err := database.AddPendingVerification(userID, groupID, "", expiresAt+120, &welcomeMsgID, false); err != nil {
+	if err := database.AddPendingVerification(userID, groupID, "", expiresAt+120, nil, false); err != nil {
 		t.Fatalf("rejoin AddPendingVerification() error = %v", err)
+	}
+	if ok, err := database.UpdateJoinWelcomeMessageID(userID, groupID, welcomeMsgID); err != nil || !ok {
+		t.Fatalf("UpdateJoinWelcomeMessageID() before prompt = (%v, %v), want (true, nil)", ok, err)
 	}
 
 	// First group message transitions PromptedOnMessage 0 -> 1 once and updates welcome_message_id.
@@ -114,6 +117,9 @@ func TestVerificationLifecycleAndAttempts(t *testing.T) {
 	}
 	if second, err := database.MarkFirstMessagePrompted(userID, groupID, expiresAt+300); err != nil || second {
 		t.Fatalf("second MarkFirstMessagePrompted() = (%v, %v), want (false, nil)", second, err)
+	}
+	if ok, err := database.UpdateJoinWelcomeMessageID(userID, groupID, 99); err != nil || ok {
+		t.Fatalf("UpdateJoinWelcomeMessageID() after prompt = (%v, %v), want (false, nil)", ok, err)
 	}
 	secondMsgID := int64(84)
 	if err := database.UpdatePendingWelcomeMessageID(userID, groupID, &secondMsgID); err != nil {

@@ -352,34 +352,42 @@ func processWelcomeMember(ctx context.Context, b *tgbot.Bot, database *db.DB, co
 		"update_source", req.source,
 	)
 
-	welcomeMsgID, ok := sendGroupVerifyPrompt(
-		ctx, b, config, configuredBotUsername,
-		req.groupID, req.groupTitle, req.messageThreadID, req.user,
-	)
-	if !ok {
-		return
-	}
-
-	if welcomeMsgID != nil {
-		slog.Info("Welcome verification message sent",
-			"group_id", req.groupID,
-			"user_id", userID,
-			"message_id", *welcomeMsgID,
-			"message_thread_id", req.messageThreadID,
-			"update_source", req.source,
-		)
-	}
-
 	expiresAt := util.CurrentTimestamp() + int64(config.VerifyTimeout) + 300
 	if err := database.AddPendingVerification(
-		userID, req.groupID, "", expiresAt, welcomeMsgID, false,
+		userID, req.groupID, "", expiresAt, nil, false,
 	); err != nil {
 		slog.Error("Failed to add pending verification", "error", err)
 	}
 
-	if welcomeMsgID != nil {
-		scheduleWelcomeMessageDeletion(ctx, b, database, userID, req.groupID, *welcomeMsgID)
+	welcomeMsgID, ok := sendGroupVerifyPrompt(
+		ctx, b, config, configuredBotUsername,
+		req.groupID, req.groupTitle, req.messageThreadID, req.user,
+	)
+	if !ok || welcomeMsgID == nil {
+		return
 	}
+
+	updated, err := database.UpdateJoinWelcomeMessageID(userID, req.groupID, *welcomeMsgID)
+	if err != nil {
+		slog.Error("Failed to update join welcome message ID", "group_id", req.groupID, "user_id", userID, "error", err)
+		return
+	}
+	if !updated {
+		deleteMessage(ctx, b, &tgbot.DeleteMessageParams{
+			ChatID:    req.groupID,
+			MessageID: int(*welcomeMsgID),
+		})
+		return
+	}
+
+	slog.Info("Welcome verification message sent",
+		"group_id", req.groupID,
+		"user_id", userID,
+		"message_id", *welcomeMsgID,
+		"message_thread_id", req.messageThreadID,
+		"update_source", req.source,
+	)
+	scheduleWelcomeMessageDeletion(ctx, b, database, userID, req.groupID, *welcomeMsgID)
 }
 
 // HandleUnverifiedGroupMessage intercepts group messages from unverified members,
@@ -411,6 +419,10 @@ func HandleUnverifiedGroupMessage(ctx context.Context, b *tgbot.Bot, database *d
 		ChatID:    groupID,
 		MessageID: update.Message.ID,
 	})
+
+	if pv.PromptedOnMessage != 0 {
+		return true
+	}
 
 	if err := restrictUser(ctx, b, groupID, userID); err != nil {
 		slog.Error("Failed to restrict unverified user on first message", "group_id", groupID, "user_id", userID, "error", err)

@@ -58,6 +58,22 @@ func (d *DB) UpdatePendingWelcomeMessageID(userID, groupID int64, welcomeMessage
 	return err
 }
 
+// UpdateJoinWelcomeMessageID sets welcome_message_id only if first-message prompting has not triggered yet.
+func (d *DB) UpdateJoinWelcomeMessageID(userID, groupID, welcomeMessageID int64) (bool, error) {
+	res, err := d.Exec(
+		"UPDATE pending_verifications SET welcome_message_id = ? WHERE user_id = ? AND group_id = ? AND prompted_on_message = 0",
+		welcomeMessageID, userID, groupID,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 // SetPendingCaptcha sets or refreshes captcha details while preserving existing attempt counts.
 func (d *DB) SetPendingCaptcha(userID, groupID int64, captchaText string, expiresAt int64, welcomeMessageID *int64, ruleAckDone bool) error {
 	_, err := d.Exec(
